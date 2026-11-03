@@ -7,7 +7,22 @@ import { parseErDsl } from "./er/dsl";
 import type { ErDiagram } from "./er/model";
 import { SIMPLE_EXAMPLE } from "./examples";
 import { elementToSvgString, svgToPng } from "./lib/exporter";
-import { baseName, hasFileSystem, ide, isTauri, openFile, openReleasePage, readFileAt, saveFileAs, setWindowTitle, startupFile, writeFileTo } from "./lib/platform";
+import {
+  baseName,
+  confirmDialog,
+  hasFileSystem,
+  ide,
+  isTauri,
+  onCloseRequested,
+  onFileOpened,
+  openFile,
+  openReleasePage,
+  readFileAt,
+  saveFileAs,
+  setWindowTitle,
+  startupFile,
+  writeFileTo,
+} from "./lib/platform";
 import { APP_VERSION, checkForUpdate, type UpdateInfo } from "./lib/update";
 import { layoutNewTables, serializeRelDsl } from "./rel/dsl";
 import { mapErToRelational } from "./rel/mapping";
@@ -21,6 +36,9 @@ import { Icon } from "./ui/Icon";
 type Tab = "er" | "rel" | "data";
 
 const AUTOSAVE_KEY = "erd-ultra:autosave";
+/** Autosave enthält Änderungen, die noch nicht in der Datei gespeichert sind */
+const AUTOSAVE_DIRTY_KEY = "erd-ultra:autosave-dirty";
+const DISCARD_MSG = "Ungespeicherte Änderungen verwerfen?";
 const SKIP_UPDATE_KEY = "erd-ultra:skip-update";
 /** Im JetBrains-Plugin als Editor einer .erdu-Datei: Inhalt kommt aus der IDE, nicht aus dem Autosave */
 const inIdeEditor = ide?.mode === "editor";
@@ -54,6 +72,15 @@ function syncRel(d: Doc, force = false): Doc {
   return { ...d, rel: schema, relText: serializeRelDsl(schema) };
 }
 
+function restoredDirty(): boolean {
+  if (inIdeEditor) return false;
+  try {
+    return localStorage.getItem(AUTOSAVE_DIRTY_KEY) === "1" && !!localStorage.getItem(AUTOSAVE_KEY);
+  } catch {
+    return false;
+  }
+}
+
 function initialDoc(): Doc {
   if (inIdeEditor) return emptyDoc();
   try {
@@ -72,7 +99,7 @@ interface Toast {
 }
 
 export default function App() {
-  const store = useDocStore(initialDoc);
+  const store = useDocStore(initialDoc, restoredDirty());
   const { doc, update } = store;
   const [tab, setTab] = useState<Tab>("er");
   const [dark, setDark] = useState(() => {
@@ -158,6 +185,7 @@ export default function App() {
     const h = setTimeout(() => {
       try {
         localStorage.setItem(AUTOSAVE_KEY, docToFile(doc));
+        localStorage.setItem(AUTOSAVE_DIRTY_KEY, store.dirty ? "1" : "0");
         if (path) localStorage.setItem("erd-ultra:path", path);
         else localStorage.removeItem("erd-ultra:path");
       } catch {
@@ -165,7 +193,7 @@ export default function App() {
       }
     }, 400);
     return () => clearTimeout(h);
-  }, [doc, path]);
+  }, [doc, path, store.dirty]);
 
   useEffect(() => {
     setWindowTitle(`${dirty ? "• " : ""}${path ? baseName(path) : "Unbenannt"} – ERD-Ultra`);
@@ -214,20 +242,30 @@ export default function App() {
     return () => clearTimeout(h);
   }, [doc, toast]);
 
-  // Datei, die per Doppelklick geöffnet wurde
+  // Datei, die per Doppelklick geöffnet wurde (beim Start oder bei laufender App)
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const openPath = async (p: string, ask: boolean) => {
+    try {
+      const d = docFromFile(await readFileAt(p));
+      if (ask && dirtyRef.current && !(await confirmDialog(`${DISCARD_MSG}\n\n„${baseName(p)}“ wird geöffnet.`))) return;
+      store.replace(d);
+      setPath(p);
+      setFitSignal((x) => x + 1);
+    } catch (e) {
+      toast(String(e), "error");
+    }
+  };
   useEffect(() => {
-    startupFile().then(async (p) => {
-      if (!p) return;
-      try {
-        store.replace(docFromFile(await readFileAt(p)));
-        setPath(p);
-        setFitSignal((x) => x + 1);
-      } catch (e) {
-        toast(String(e), "error");
-      }
+    startupFile().then((p) => {
+      if (p) openPath(p, true);
     });
+    return onFileOpened((p) => openPath(p, true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Desktop-App: vor dem Schließen nach ungespeicherten Änderungen fragen
+  useEffect(() => onCloseRequested(async () => !dirtyRef.current || (await confirmDialog(`${DISCARD_MSG}\n\nERD-Ultra wird beendet.`, "Beenden"))), []);
 
   const mappingWarnings = useMemo(() => mapErToRelational(doc.er, doc.mapping).warnings, [doc.er, doc.mapping]);
 
@@ -287,6 +325,7 @@ export default function App() {
   };
   const open = async () => {
     try {
+      if (!inIdeEditor && dirty && !(await confirmDialog(DISCARD_MSG))) return;
       const f = await openFile([...FILTER, { name: "ER-Code", extensions: ["erd", "txt"] }]);
       if (!f) return;
       if (inIdeEditor && f.name.toLowerCase().endsWith(".erdu")) {
@@ -308,14 +347,14 @@ export default function App() {
       toast(`Öffnen fehlgeschlagen: ${e instanceof Error ? e.message : e}`, "error");
     }
   };
-  const newDoc = () => {
-    if (dirty && !confirm("Ungespeicherte Änderungen verwerfen?")) return;
+  const newDoc = async () => {
+    if (dirty && !(await confirmDialog(DISCARD_MSG))) return;
     store.replace(emptyDoc());
     if (!inIdeEditor) setPath(null);
     setTab("er");
   };
-  const loadExample = () => {
-    if (dirty && !confirm("Ungespeicherte Änderungen verwerfen?")) return;
+  const loadExample = async () => {
+    if (dirty && !(await confirmDialog(DISCARD_MSG))) return;
     store.replace(exampleDoc());
     if (!inIdeEditor) setPath(null);
     setMenu(null);

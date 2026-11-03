@@ -82,13 +82,14 @@ export interface DocStore {
   markSaved: () => void;
 }
 
-export function useDocStore(initial: () => Doc): DocStore {
+/** `initiallyDirty`: Startzustand gilt als ungespeichert (z. B. aus dem Autosave wiederhergestellte Änderungen) */
+export function useDocStore(initial: () => Doc, initiallyDirty = false): DocStore {
   const [doc, setDoc] = useState<Doc>(initial);
   const docRef = useRef(doc);
   docRef.current = doc;
   const hist = useRef<History>({ past: [], future: [], lastKey: null, lastTime: 0 });
   const [, force] = useState(0);
-  const savedRef = useRef<Doc>(doc);
+  const savedRef = useRef<Doc | null>(initiallyDirty ? null : doc);
   const [savedVersion, setSavedVersion] = useState(0);
 
   const update = useCallback((fn: (d: Doc) => Doc, mergeKey?: string) => {

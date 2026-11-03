@@ -115,9 +115,22 @@ export function placeAttributes(d: ErDiagram, ownerId: string, onlyUnplaced = fa
     const other = e.from === ownerId ? byId.get(e.to) : e.to === ownerId ? byId.get(e.from) : undefined;
     if (other && Number.isFinite(other.x) && !(todo as ErNode[]).includes(other)) segs.push(other);
   }
-  const boxes: { x: number; y: number; w: number; h: number }[] = attrs
-    .filter((a) => !todo.includes(a) && Number.isFinite(a.x))
-    .map((a) => ({ x: a.x, y: a.y, ...nodeSize(a) }));
+  // Übrige Linien im Diagramm (z. B. zwischen anderen Entitäten und Beziehungen)
+  const placedEnd = (id: string) => {
+    const n = byId.get(id);
+    return n && Number.isFinite(n.x) && !(todo as ErNode[]).includes(n) ? n : undefined;
+  };
+  const lines: [ErNode, ErNode][] = [];
+  for (const e of d.edges) {
+    if (e.from === ownerId || e.to === ownerId) continue;
+    const a = placedEnd(e.from);
+    const b = placedEnd(e.to);
+    if (a && b) lines.push([a, b]);
+  }
+  // Alle bereits platzierten Knoten – auch Attribute anderer Besitzer – sind Hindernisse
+  const boxes: { x: number; y: number; w: number; h: number }[] = d.nodes
+    .filter((n) => n !== owner && !(todo as ErNode[]).includes(n) && Number.isFinite(n.x))
+    .map((n) => ({ x: n.x, y: n.y, ...nodeSize(n) }));
   const posFor = (ang: number, w: number, h: number, grow = 0) => {
     const rx = os.w / 2 + w / 2 + 28 + extra + grow;
     const ry = os.h / 2 + h / 2 + 42 + extra + grow;
@@ -136,9 +149,10 @@ export function placeAttributes(d: ErDiagram, ownerId: string, onlyUnplaced = fa
     cands.sort((x, y) => y.score - x.score);
     const collides = (p: { x: number; y: number }) =>
       segs.some((o) => [-as.w / 2 + 6, 0, as.w / 2 - 6].some((dx) => distToSegment({ x: p.x + dx, y: p.y }, owner, o) < as.h / 2 + 3)) ||
-      boxes.some((b) => Math.abs(b.x - p.x) < (b.w + as.w) / 2 + 4 && Math.abs(b.y - p.y) < (b.h + as.h) / 2 + 2);
+      lines.some(([s, t]) => [-as.w / 2 + 6, 0, as.w / 2 - 6].some((dx) => distToSegment({ x: p.x + dx, y: p.y }, s, t) < as.h / 2 + 3)) ||
+      boxes.some((b) => Math.abs(b.x - p.x) < (b.w + as.w) / 2 + 8 && Math.abs(b.y - p.y) < (b.h + as.h) / 2 + 4);
     let pick: { ang: number; p: { x: number; y: number } } | null = null;
-    for (const grow of [0, 30, 60]) {
+    for (const grow of [0, 30, 60, 100, 150]) {
       for (const c of cands) {
         const p = posFor(c.ang, as.w, as.h, grow);
         if (!collides(p)) {
@@ -278,6 +292,12 @@ export function autoLayout(d: ErDiagram): void {
   for (const n of main) {
     n.x = Math.round(n.x);
     n.y = Math.round(n.y);
+  }
+  // Attribute neu verteilen: erst alle lösen, damit alte Positionen nicht als Hindernis zählen
+  for (const n of d.nodes) {
+    if (n.kind !== "attribute") continue;
+    n.x = NaN;
+    n.y = NaN;
   }
   for (const n of main) placeAttributes(d, n.id);
   for (const n of d.nodes) {

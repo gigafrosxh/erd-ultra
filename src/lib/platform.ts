@@ -121,6 +121,49 @@ export async function startupFile(): Promise<string | null> {
   }
 }
 
+/** Datei, die das Betriebssystem bei laufender App übergibt (macOS: Doppelklick im Finder) */
+export function onFileOpened(fn: (path: string) => void): () => void {
+  if (!isTauri) return () => {};
+  let off: (() => void) | null = null;
+  let stopped = false;
+  import("@tauri-apps/api/event").then(({ listen }) =>
+    listen("file-opened", async () => {
+      const p = await invoke<string | null>("take_opened_file").catch(() => null);
+      if (p) fn(p);
+    }).then((u) => (stopped ? u() : (off = u))),
+  );
+  return () => {
+    stopped = true;
+    off?.();
+  };
+}
+
+/** Schließen des Fensters abfangen. `allow` entscheidet, ob das Fenster wirklich geschlossen wird. */
+export function onCloseRequested(allow: () => boolean | Promise<boolean>): () => void {
+  // Browser und IDE-Plugin: der Autosave bzw. die IDE sichern den Stand
+  if (!isTauri) return () => {};
+  let off: (() => void) | null = null;
+  let stopped = false;
+  import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+    getCurrentWindow()
+      .onCloseRequested(async (e) => {
+        if (!(await allow())) e.preventDefault();
+      })
+      .then((u) => (stopped ? u() : (off = u))),
+  );
+  return () => {
+    stopped = true;
+    off?.();
+  };
+}
+
+/** Ja/Nein-Rückfrage – nativ in der Desktop-App, sonst im Browser-Dialog */
+export async function confirmDialog(message: string, okLabel = "Verwerfen"): Promise<boolean> {
+  if (!isTauri) return confirm(message);
+  const { ask } = await import("@tauri-apps/plugin-dialog");
+  return ask(message, { title: "ERD-Ultra", kind: "warning", okLabel, cancelLabel: "Abbrechen" });
+}
+
 export async function setWindowTitle(title: string) {
   document.title = title;
   if (!isTauri) return;

@@ -1,5 +1,11 @@
 use base64::Engine;
 use std::fs;
+use std::sync::Mutex;
+use tauri::Manager;
+
+/// Dateien, die das Betriebssystem übergeben hat, bevor die Oberfläche bereit war
+#[derive(Default)]
+struct PendingFiles(Mutex<Vec<String>>);
 
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
@@ -19,12 +25,21 @@ fn write_binary_file(path: String, base64: String) -> Result<(), String> {
     fs::write(&path, bytes).map_err(|e| format!("{path}: {e}"))
 }
 
-/// Datei, die beim Start übergeben wurde (z.B. Doppelklick auf eine .erdu-Datei)
+/// Datei, die beim Start übergeben wurde: unter Windows/Linux als Argument,
+/// unter macOS per Apple-Event (Doppelklick im Finder, „Öffnen mit“)
 #[tauri::command]
-fn startup_file() -> Option<String> {
-    std::env::args()
-        .skip(1)
-        .find(|a| a.to_lowercase().ends_with(".erdu") && std::path::Path::new(a).exists())
+fn startup_file(pending: tauri::State<PendingFiles>) -> Option<String> {
+    take_opened_file(pending).or_else(|| {
+        std::env::args()
+            .skip(1)
+            .find(|a| a.to_lowercase().ends_with(".erdu") && std::path::Path::new(a).exists())
+    })
+}
+
+/// Zuletzt vom Betriebssystem übergebene Datei abholen (macOS, App läuft bereits)
+#[tauri::command]
+fn take_opened_file(pending: tauri::State<PendingFiles>) -> Option<String> {
+    pending.0.lock().unwrap().pop()
 }
 
 /// Release-Seite im Standard-Browser öffnen (nur Links auf das eigene GitHub-Repository)
@@ -50,13 +65,35 @@ fn open_release_page(url: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(PendingFiles::default())
         .invoke_handler(tauri::generate_handler![
             read_text_file,
             write_text_file,
             write_binary_file,
             startup_file,
+            take_opened_file,
             open_release_page
         ])
-        .run(tauri::generate_context!())
-        .expect("Fehler beim Starten von ERD-Ultra");
+        .build(tauri::generate_context!())
+        .expect("Fehler beim Starten von ERD-Ultra")
+        .run(|app, event| {
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            if let tauri::RunEvent::Opened { urls } = event {
+                for path in urls.iter().filter_map(|u| u.to_file_path().ok()) {
+                    let path = path.to_string_lossy().to_string();
+                    if !path.to_lowercase().ends_with(".erdu") {
+                        continue;
+                    }
+                    // Merken und die Oberfläche benachrichtigen. Ist sie noch nicht bereit,
+                    // holt sie die Datei beim Start über startup_file ab.
+                    app.state::<PendingFiles>().0.lock().unwrap().push(path);
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = tauri::Emitter::emit(&w, "file-opened", ());
+                        let _ = w.set_focus();
+                    }
+                }
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+            let _ = (app, event);
+        });
 }
