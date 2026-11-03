@@ -47,20 +47,24 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>, initial: Vi
     });
   }, [svgRef]);
 
+  /** Inhalt einpassen. `insets`: von überlagernden Leisten belegte Ränder (px), die frei bleiben sollen. */
   const fit = useCallback(
-    (b: Bounds | null, maxZoom = 1.2) => {
+    (b: Bounds | null, maxZoom = 1.2, insets: Partial<Record<"left" | "right" | "top" | "bottom", number>> = {}) => {
       const el = svgRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
+      const { left = 0, right = 0, top = 0, bottom = 0 } = insets;
+      const aw = Math.max(100, r.width - left - right);
+      const ah = Math.max(100, r.height - top - bottom);
       if (!b) {
-        setView({ x: r.width / 2, y: r.height / 2, k: 1 });
+        setView({ x: left + aw / 2, y: top + ah / 2, k: 1 });
         return;
       }
-      const pad = 60;
+      const pad = 40;
       const w = b.maxX - b.minX || 1;
       const h = b.maxY - b.minY || 1;
-      const k = Math.max(0.1, Math.min(maxZoom, (r.width - pad * 2) / w, (r.height - pad * 2) / h));
-      setView({ k, x: (r.width - w * k) / 2 - b.minX * k, y: (r.height - h * k) / 2 - b.minY * k });
+      const k = Math.max(0.1, Math.min(maxZoom, (aw - pad * 2) / w, (ah - pad * 2) / h));
+      setView({ k, x: left + (aw - w * k) / 2 - b.minX * k, y: top + (ah - h * k) / 2 - b.minY * k });
     },
     [svgRef],
   );

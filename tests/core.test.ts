@@ -179,3 +179,19 @@ describe("Update-Prüfung", () => {
     expect(pickUpdate([rel("v0.2.0-beta.2", true), rel("v0.2.0")], "0.2.0-beta.1")?.version).toBe("0.2.0");
   });
 });
+
+describe("Kommentare im ER-Code", () => {
+  it("bleiben nach grafischen Änderungen erhalten", async () => {
+    const { keepComments } = await import("../src/er/dsl");
+    const src = `# Kopf\n\n# Kunden\nentity Kunde {\n  # Schlüssel\n  key nr: int\n  name\n}\n// Bestellungen\nentity Bestellung { key bnr }\nrelationship gibt (Kunde 1, Bestellung n)\n# Ende\n`;
+    const d = parseErDsl(src).diagram;
+    d.nodes.find((n) => n.name === "name")!.name = "vorname";
+    const out = keepComments(src, serializeErDsl(d));
+    expect(out).toContain("# Kopf\n# Kunden\nentity Kunde {\n  # Schlüssel\n  key nr: int\n  vorname\n}");
+    expect(out).toContain("// Bestellungen\nentity Bestellung");
+    expect(out.trimEnd().endsWith("# Ende")).toBe(true);
+    expect(parseErDsl(out).errors).toEqual([]);
+    // erneutes Übernehmen verdoppelt nichts
+    expect(keepComments(out, serializeErDsl(d))).toBe(out);
+  });
+});

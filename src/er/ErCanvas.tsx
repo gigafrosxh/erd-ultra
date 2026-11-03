@@ -130,7 +130,8 @@ export const ErCanvas = forwardRef<ErCanvasHandle, Props>(function ErCanvas(
   };
 
   useImperativeHandle(ref, () => ({
-    fit: () => fit(bounds()),
+    // Werkzeugleiste links, Zoomleiste unten und Diagramm-Knopf oben rechts freihalten
+    fit: () => fit(bounds(), 1.2, { left: 64, top: 44, bottom: 56, right: 8 }),
     zoom: (f: number) => zoomAt(f),
     center: (x: number, y: number) => {
       const r = svgRef.current!.getBoundingClientRect();

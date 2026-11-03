@@ -539,6 +539,8 @@ export default function App() {
             canvasRef={erCanvas}
             active={tab === "er"}
             fitSignal={fitSignal}
+            onExample={loadExample}
+            onOpen={open}
           />
         </div>
         <div className="view" hidden={tab !== "rel"}>

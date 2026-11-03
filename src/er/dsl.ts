@@ -505,3 +505,60 @@ export function serializeErDsl(d: ErDiagram): string {
 export function newNodeId(): string {
   return uid();
 }
+
+const COMMENT_LINE = /^\s*(#|\/\/)/;
+
+/** Schlüssel einer Code-Zeile zum Wiederfinden nach dem Neu-Erzeugen, z. B. "entity Kunde" oder "key kunden_nr" */
+function lineKey(line: string): string {
+  return line
+    .trim()
+    .split(/[({:,]/)[0]
+    .replace(/["`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Kommentare aus dem bisherigen Code in neu erzeugten Code übernehmen: Ein Kommentarblock bleibt vor der
+ * Zeile, vor der er stand. Kommentare am Ende bleiben am Ende, solche ohne Gegenstück wandern an den Anfang.
+ */
+export function keepComments(oldText: string, newText: string): string {
+  const old = oldText.split("\n");
+  const blocks: { key: string | null; lines: string[] }[] = [];
+  let cur: string[] = [];
+  for (const line of old) {
+    if (COMMENT_LINE.test(line)) cur.push(line.trim());
+    else if (line.trim() && cur.length) {
+      blocks.push({ key: lineKey(line), lines: cur });
+      cur = [];
+    }
+  }
+  if (cur.length) blocks.push({ key: null, lines: cur });
+  if (!blocks.length) return newText;
+
+  const lines = newText.replace(/\n$/, "").split("\n");
+  const before = new Map<number, string[]>();
+  const head: string[] = [];
+  const tail: string[] = [];
+  const used = new Set<number>();
+  for (const b of blocks) {
+    if (b.key === null) {
+      tail.push(...b.lines);
+      continue;
+    }
+    const idx = lines.findIndex((l, i) => !used.has(i) && l.trim() && lineKey(l) === b.key);
+    if (idx < 0) {
+      head.push(...b.lines);
+      continue;
+    }
+    used.add(idx);
+    const indent = lines[idx].match(/^\s*/)![0];
+    before.set(idx, [...(before.get(idx) ?? []), ...b.lines.map((l) => indent + l)]);
+  }
+  const out: string[] = [...head];
+  if (head.length && lines[0]?.trim()) out.push("");
+  lines.forEach((l, i) => out.push(...(before.get(i) ?? []), l));
+  if (tail.length) out.push("", ...tail);
+  return out.join("\n") + "\n";
+}

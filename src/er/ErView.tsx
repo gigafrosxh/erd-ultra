@@ -7,7 +7,7 @@ import { SplitPane } from "../ui/SplitPane";
 import { ErCanvas, type ErCanvasHandle, type ErSelection, type ErTool, ownedAttributes } from "./ErCanvas";
 import { ErProperties } from "./ErProperties";
 import { DARK, LIGHT } from "./ErSvg";
-import { parseErDsl, serializeErDsl } from "./dsl";
+import { keepComments, parseErDsl, serializeErDsl } from "./dsl";
 import { autoLayout } from "./layout";
 import { type ErDiagram, type ErNode, nodeSize, uid } from "./model";
 
@@ -21,6 +21,8 @@ interface Props {
   canvasRef: React.RefObject<ErCanvasHandle | null>;
   active: boolean;
   fitSignal: number;
+  onExample: () => void;
+  onOpen: () => void;
 }
 
 const TOOLS: { id: ErTool; label: string; key?: string; group: number }[] = [
@@ -47,7 +49,7 @@ entity Kunde {
 entity Bestellung { key bestell_nr: int, datum: date }
 relationship gibt_auf (Kunde 1, Bestellung n total)`;
 
-export function ErView({ diagram, text, dark, onDiagram, onText, toast, canvasRef, active, fitSignal }: Props) {
+export function ErView({ diagram, text, dark, onDiagram, onText, toast, canvasRef, active, fitSignal, onExample, onOpen }: Props) {
   const [tool, setTool] = useState<ErTool>("select");
   const [selection, setSelection] = useState<ErSelection>({ nodes: new Set(), edge: null });
   const [errors, setErrors] = useState<CodeError[]>([]);
@@ -60,8 +62,10 @@ export function ErView({ diagram, text, dark, onDiagram, onText, toast, canvasRe
   const pal = dark ? DARK : LIGHT;
   const clipboard = useRef<{ nodes: ErNode[]; edges: ErDiagram["edges"] } | null>(null);
 
-  // Grafische Änderung → Code neu erzeugen
-  const change = useCallback((d: ErDiagram, mergeKey?: string) => onDiagram(d, serializeErDsl(d), mergeKey), [onDiagram]);
+  // Grafische Änderung → Code neu erzeugen, Kommentare aus dem bisherigen Code bleiben erhalten
+  const textRef = useRef(text);
+  textRef.current = text;
+  const change = useCallback((d: ErDiagram, mergeKey?: string) => onDiagram(d, keepComments(textRef.current, serializeErDsl(d)), mergeKey), [onDiagram]);
 
   // Code-Änderung → nach kurzer Pause parsen
   const parseTimer = useRef<number | undefined>(undefined);
@@ -282,7 +286,20 @@ export function ErView({ diagram, text, dark, onDiagram, onText, toast, canvasRe
         <div className="empty-hint">
           <Icon name="sparkles" size={28} />
           <h2>Leeres Diagramm</h2>
-          <p>Doppelklick auf die Fläche erstellt eine Entität, links findest du alle Chen-Symbole. Du kannst das Diagramm auch rechts als Code schreiben oder ein Beispiel öffnen.</p>
+          <p>Doppelklick auf die Fläche erstellt eine Entität, links findest du alle Chen-Symbole. Du kannst das Diagramm auch rechts als Code schreiben.</p>
+          <div className="empty-actions">
+            <button className="btn primary" onClick={onExample}>
+              <Icon name="sparkles" size={15} /> Einfaches Beispiel laden
+            </button>
+            <button className="btn" onClick={onOpen}>
+              <Icon name="folder" size={15} /> Datei öffnen…
+            </button>
+            {!showCode && (
+              <button className="btn" onClick={() => setShowCode(true)}>
+                <Icon name="code" size={15} /> Code einblenden
+              </button>
+            )}
+          </div>
         </div>
       )}
       {!hasSelection && !showInfo && (

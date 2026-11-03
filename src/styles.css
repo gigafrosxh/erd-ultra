@@ -457,6 +457,14 @@ textarea {
   color: var(--muted);
   pointer-events: none;
 }
+.empty-hint .empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  pointer-events: auto;
+}
 .empty-hint.static {
   position: static;
   transform: none;

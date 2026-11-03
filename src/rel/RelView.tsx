@@ -56,7 +56,7 @@ export function RelView(p: Props) {
   schemaRef.current = schema;
 
   const change = (s: RelSchema, key?: string) => p.onSchema(s, serializeRelDsl(s), key);
-  const doFit = () => fit(relBounds(schemaRef.current), 1.1);
+  const doFit = () => fit(relBounds(schemaRef.current), 1.1, { top: 20, bottom: 56 });
   // Nur registrieren – ein zurückgegebener Wert würde als Cleanup bei jedem Render einpassen
   useEffect(() => {
     p.registerFit(doFit);
