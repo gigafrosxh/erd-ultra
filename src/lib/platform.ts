@@ -132,6 +132,13 @@ export async function setWindowTitle(title: string) {
   }
 }
 
+/** Release-Seite im System-Browser öffnen */
+export async function openReleasePage(url: string): Promise<void> {
+  if (ide) await ide.call("openUrl", { url });
+  else if (isTauri) await invoke("open_release_page", { url });
+  else window.open(url, "_blank", "noopener");
+}
+
 export function baseName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }

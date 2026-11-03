@@ -57,7 +57,10 @@ export function RelView(p: Props) {
 
   const change = (s: RelSchema, key?: string) => p.onSchema(s, serializeRelDsl(s), key);
   const doFit = () => fit(relBounds(schemaRef.current), 1.1);
-  useEffect(() => p.registerFit(doFit));
+  // Nur registrieren – ein zurückgegebener Wert würde als Cleanup bei jedem Render einpassen
+  useEffect(() => {
+    p.registerFit(doFit);
+  });
   // Einpassen, sobald die Ansicht sichtbar ist (bei verstecktem Tab ist die Fläche 0×0)
   const fittedFor = useRef(-1);
   useEffect(() => {

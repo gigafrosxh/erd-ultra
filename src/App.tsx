@@ -7,7 +7,8 @@ import { parseErDsl } from "./er/dsl";
 import type { ErDiagram } from "./er/model";
 import { SIMPLE_EXAMPLE } from "./examples";
 import { elementToSvgString, svgToPng } from "./lib/exporter";
-import { baseName, hasFileSystem, ide, openFile, readFileAt, saveFileAs, setWindowTitle, startupFile, writeFileTo } from "./lib/platform";
+import { baseName, hasFileSystem, ide, isTauri, openFile, openReleasePage, readFileAt, saveFileAs, setWindowTitle, startupFile, writeFileTo } from "./lib/platform";
+import { APP_VERSION, checkForUpdate, type UpdateInfo } from "./lib/update";
 import { layoutNewTables, serializeRelDsl } from "./rel/dsl";
 import { mapErToRelational } from "./rel/mapping";
 import type { RelSchema } from "./rel/model";
@@ -20,6 +21,7 @@ import { Icon } from "./ui/Icon";
 type Tab = "er" | "rel" | "data";
 
 const AUTOSAVE_KEY = "erd-ultra:autosave";
+const SKIP_UPDATE_KEY = "erd-ultra:skip-update";
 /** Im JetBrains-Plugin als Editor einer .erdu-Datei: Inhalt kommt aus der IDE, nicht aus dem Autosave */
 const inIdeEditor = ide?.mode === "editor";
 
@@ -94,6 +96,7 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [menu, setMenu] = useState<null | "file">(null);
   const [fitSignal, setFitSignal] = useState(1);
+  const [available, setAvailable] = useState<UpdateInfo | null>(null);
   const erCanvas = useRef<ErCanvasHandle | null>(null);
   const relFit = useRef<() => void>(() => {});
   // IDE-Editor: zuletzt mit dem IDE-Dokument abgeglichener Inhalt und dessen Änderungsstatus
@@ -106,6 +109,39 @@ export default function App() {
     setToasts((t) => [...t, { id, msg, kind }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === "error" ? 5000 : 2600);
   }, []);
+
+  // Beim Start nach einer neuen Version suchen (nur Desktop-App und IDE-Plugin; im IDE-Editor
+  // nicht in jedem geöffneten .erdu-Tab, sondern einmal pro IDE-Sitzung im Tool-Fenster bzw. ersten Editor)
+  const findUpdate = useCallback(
+    async (manual: boolean) => {
+      try {
+        const u = await checkForUpdate();
+        let skipped: string | null = null;
+        try {
+          skipped = localStorage.getItem(SKIP_UPDATE_KEY);
+        } catch {
+          /* ignorieren */
+        }
+        if (u && (manual || u.version !== skipped)) setAvailable(u);
+        else if (manual) toast(`ERD-Ultra ${APP_VERSION} ist aktuell`, "info");
+      } catch (e) {
+        if (manual) toast(`Update-Prüfung fehlgeschlagen: ${e instanceof Error ? e.message : e}`, "error");
+      }
+    },
+    [toast],
+  );
+  useEffect(() => {
+    if (!isTauri && !ide) return;
+    if (ide) {
+      try {
+        if (sessionStorage.getItem("erd-ultra:update-checked")) return;
+        sessionStorage.setItem("erd-ultra:update-checked", "1");
+      } catch {
+        /* ignorieren */
+      }
+    }
+    findUpdate(false);
+  }, [findUpdate]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
@@ -413,6 +449,9 @@ export default function App() {
               {item(tab === "rel" ? "Schema als SVG exportieren" : "ER-Diagramm als SVG exportieren", () => exportImage("svg"), undefined, "image")}
               {item("ER-Code exportieren (.erd)", exportErCode, undefined, "code")}
               {item("SQL (CREATE TABLE) exportieren", exportSql, undefined, "database")}
+              <div className="menu-sep" />
+              {item("Nach Updates suchen…", () => findUpdate(true), undefined, "refresh")}
+              <div className="menu-version">Version {APP_VERSION}</div>
             </div>
           )}
         </div>
@@ -491,6 +530,42 @@ export default function App() {
           </div>
         )}
       </main>
+      {available && (
+        <div className="update-banner" role="status">
+          <Icon name="download" size={18} />
+          <div className="grow">
+            <b>Neue Version verfügbar: {available.version}</b>
+            <span>
+              Installiert ist {APP_VERSION}.{ide ? " Das Plugin-ZIP liegt beim Release." : ""}
+            </span>
+          </div>
+          <button
+            className="btn primary"
+            onClick={() => {
+              openReleasePage(available.url).catch((e) => toast(String(e), "error"));
+              setAvailable(null);
+            }}
+          >
+            Aktualisieren
+          </button>
+          <button className="btn" onClick={() => setAvailable(null)} title="Beim nächsten Start erneut erinnern">
+            Später
+          </button>
+          <button
+            className="btn ghost"
+            onClick={() => {
+              try {
+                localStorage.setItem(SKIP_UPDATE_KEY, available.version);
+              } catch {
+                /* ignorieren */
+              }
+              setAvailable(null);
+            }}
+          >
+            Überspringen
+          </button>
+        </div>
+      )}
       <div className="toasts">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}>

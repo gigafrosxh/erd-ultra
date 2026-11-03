@@ -1063,6 +1063,43 @@ textarea {
 }
 
 /* Hinweise */
+.update-banner {
+  position: fixed;
+  top: 58px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
+  z-index: 90;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 40px);
+  padding: 10px 12px 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--accent);
+  animation: pop 0.18s ease-out;
+}
+.update-banner .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--text);
+}
+.update-banner .grow span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.menu-version {
+  padding: 4px 12px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
 .toasts {
   position: fixed;
   bottom: 20px;

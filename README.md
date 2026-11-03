@@ -123,6 +123,8 @@ Bei jedem Push baut GitHub Actions die Installer und das JetBrains-Plugin und ve
 | jeder andere Branch | Pre-Release, z.B. `v1.5.0-beta.3` |
 | Tag `vX.Y.Z` | genau diese Version |
 
+Die Desktop-App und das JetBrains-Plugin prüfen beim Start, ob auf GitHub eine neuere Version liegt, und bieten das Update an (*Aktualisieren*, *Später* oder *Überspringen*). Stabile Versionen melden nur stabile Releases, Beta- und RC-Versionen auch neuere Pre-Releases. Manuell geht das über *Datei → Nach Updates suchen…*.
+
 Welcher Teil der Version steigt, richtet sich nach den Commit-Nachrichten ([Conventional Commits](https://www.conventionalcommits.org/de/)):
 
 | Commit-Nachricht | Versionssprung |

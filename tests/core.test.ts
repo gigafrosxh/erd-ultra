@@ -6,6 +6,7 @@ import { generateData, datasetToSql } from "../src/data/generator";
 import { schemaToSql } from "../src/rel/sql";
 import { SIMPLE_EXAMPLE } from "../src/examples";
 import { EXAMPLES } from "./fixtures";
+import { compareVersions, pickUpdate } from "../src/lib/update";
 
 describe("ER-DSL", () => {
   for (const ex of [{ id: "einfach", dsl: SIMPLE_EXAMPLE }, ...EXAMPLES]) {
@@ -154,4 +155,27 @@ it("Beispiel Rechnungsposition: zusammengesetzte Schlüssel", () => {
   const pk = (n: string) => schema.tables.find((t) => t.name === n)!.columns.filter((c) => c.pk).map((c) => c.name);
   expect(pk("position")).toEqual(["rechnung_nr", "artikel_nr", "pos_nr"]);
   expect(pk("lieferung")).toEqual(["rechnung_nr", "artikel_nr", "pos_nr", "lieferung_nr"]);
+});
+
+describe("Update-Prüfung", () => {
+  const rel = (tag: string, prerelease = false, draft = false) => ({ tag_name: tag, html_url: `https://github.com/gigafrosxh/erd-ultra/releases/tag/${tag}`, prerelease, draft });
+
+  it("vergleicht Versionen nach SemVer", () => {
+    expect(compareVersions("0.2.0", "0.1.9")).toBeGreaterThan(0);
+    expect(compareVersions("0.2.0-beta.2", "0.2.0-beta.10")).toBeLessThan(0);
+    expect(compareVersions("0.2.0", "0.2.0-rc.1")).toBeGreaterThan(0);
+    expect(compareVersions("0.2.0-beta.3", "0.2.0-rc.1")).toBeLessThan(0);
+    expect(compareVersions("v1.0.0", "1.0.0")).toBe(0);
+  });
+
+  it("stabile Versionen sehen nur stabile Releases", () => {
+    const list = [rel("v0.3.0-beta.1", true), rel("v0.2.1"), rel("v0.1.1"), rel("v0.4.0", false, true)];
+    expect(pickUpdate(list, "0.2.0")?.version).toBe("0.2.1");
+    expect(pickUpdate(list, "0.2.1")).toBeNull();
+  });
+
+  it("Beta-Versionen sehen auch neuere Pre-Releases und die fertige Version", () => {
+    expect(pickUpdate([rel("v0.2.0-beta.2", true), rel("v0.1.1")], "0.2.0-beta.1")?.version).toBe("0.2.0-beta.2");
+    expect(pickUpdate([rel("v0.2.0-beta.2", true), rel("v0.2.0")], "0.2.0-beta.1")?.version).toBe("0.2.0");
+  });
 });

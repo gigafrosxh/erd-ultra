@@ -265,6 +265,12 @@ public final class ErduBrowserPanel implements Disposable {
                 FileEditorManager.getInstance(project).openFile(vf, true);
                 yield null;
             }
+            case "openUrl" -> {
+                String url = params.get("url").getAsString();
+                if (!url.startsWith("https://github.com/gigafrosxh/erd-ultra/")) throw new IllegalArgumentException("Link nicht erlaubt");
+                BrowserUtil.browse(url);
+                yield null;
+            }
             case "ready" -> null;
             default -> throw new IllegalArgumentException("Unbekannte Methode: " + method);
         };
