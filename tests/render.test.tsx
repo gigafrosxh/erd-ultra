@@ -5,7 +5,7 @@ import { parseErDsl } from "../src/er/dsl";
 import { ErExportSvg, LIGHT } from "../src/er/ErSvg";
 import { RelExportSvg, REL_LIGHT } from "../src/rel/RelSvg";
 import { mapErToRelational } from "../src/rel/mapping";
-import { EXAMPLES } from "../src/examples";
+import { EXAMPLES } from "./fixtures";
 const OUT = process.env.OUT_DIR;
 it.skipIf(!OUT)("render", () => {
   for (const ex of EXAMPLES) {

@@ -81,6 +81,25 @@ table mitarbeiter {
 | Entf, Pfeiltasten, ⌘C/⌘V/⌘D, F2 | Löschen, Verschieben, Kopieren/Einfügen/Duplizieren, Umbenennen |
 | 0 | Alles anzeigen |
 
+## JetBrains-Plugin
+
+ERD-Ultra gibt es auch als Plugin für IntelliJ IDEA, PyCharm, DataGrip und die anderen JetBrains-IDEs (ab 2024.3).
+
+- `.erdu`-Dateien öffnen sich im grafischen ERD-Ultra-Editor. Der JSON-Text bleibt als zweiter Reiter erreichbar, Speichern, Änderungsmarkierung, lokale Historie und Git laufen wie bei jeder anderen Datei.
+- Das Tool-Fenster **ERD-Ultra** (rechts) enthält die komplette App.
+- *Neu → ERD-Ultra-Diagramm* legt ein leeres Diagramm an.
+- Zoomen per Trackpad (Pinch) oder Strg/⌘ + Mausrad.
+
+Installation: `ERD-Ultra-JetBrains-Plugin-<version>.zip` aus dem Release laden, dann in der IDE *Einstellungen → Plugins → ⚙ → Plugin von Datenträger installieren…*.
+
+Selbst bauen (JDK 21 wird bei Bedarf automatisch geladen):
+
+```bash
+cd jetbrains-plugin
+./gradlew buildPlugin   # baut auch die Web-App, Ergebnis in build/distributions/
+./gradlew runIde        # Test-IDE mit dem Plugin starten
+```
+
 ## Entwicklung
 
 Voraussetzungen: Node.js 22+, Rust (stable) und die [Tauri-Voraussetzungen](https://tauri.app/start/prerequisites/).
@@ -95,7 +114,7 @@ npm run app:build   # Installer lokal bauen
 
 ## Releases und Versionierung
 
-Bei jedem Push baut GitHub Actions die Installer und veröffentlicht sie als Release:
+Bei jedem Push baut GitHub Actions die Installer und das JetBrains-Plugin und veröffentlicht sie als Release:
 
 | Push auf | Ergebnis |
 | --- | --- |
@@ -121,6 +140,7 @@ Installer:
 | macOS | Universal `.dmg` / `.app` für Apple Silicon und Intel |
 | Windows 11 | `.msi` und `.exe` (NSIS) |
 | Linux | `.AppImage`, `.deb` und `.rpm` |
+| JetBrains-IDEs | `ERD-Ultra-JetBrains-Plugin-<version>.zip` |
 
 > Die Installer sind nicht signiert. Unter macOS beim ersten Start Rechtsklick → „Öffnen“ wählen. Unter Windows bei SmartScreen auf „Weitere Informationen“ → „Trotzdem ausführen“ klicken.
 

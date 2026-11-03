@@ -11,6 +11,9 @@ src-tauri/target/
 src-tauri/gen/
 coverage/
 *.tsbuildinfo
+.gradle/
+.intellijPlatform/
+.kotlin/
 
 # Installer / Bundles
 *.dmg

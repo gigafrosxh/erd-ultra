@@ -1,0 +1,35 @@
+<idea-plugin>
+    <id>io.github.gigafrosxh.erd-ultra</id>
+    <name>ERD-Ultra</name>
+    <vendor url="https://github.com/gigafrosxh/erd-ultra">ERD-Ultra</vendor>
+
+    <description><![CDATA[
+    <p>ER diagrams in Chen notation, relational schemas and test data – right inside IntelliJ IDEA, PyCharm, DataGrip and other JetBrains IDEs.</p>
+    <p>ER-Diagramme (Chen-Notation), relationale Schemas und Testdaten direkt in der IDE:</p>
+    <ul>
+      <li><b>.erdu</b>-Dateien öffnen sich im grafischen ERD-Ultra-Editor (Reiter „ERD-Ultra“, der JSON-Text bleibt als zweiter Reiter erreichbar).</li>
+      <li>Tool-Fenster <b>ERD-Ultra</b> mit der kompletten App.</li>
+      <li><i>Neu → ERD-Ultra-Diagramm</i> legt ein leeres Diagramm an.</li>
+      <li>Export als PNG, SVG, ER-Code, SQL und Testdaten über die Dialoge der IDE.</li>
+    </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType name="ERD-Ultra" implementationClass="io.github.gigafrosxh.erdultra.ErduFileType"
+                  fieldName="INSTANCE" extensions="erdu"/>
+        <fileEditorProvider implementation="io.github.gigafrosxh.erdultra.ErduFileEditorProvider"/>
+        <toolWindow id="ERD-Ultra" anchor="right" icon="/icons/toolWindow.svg"
+                    factoryClass="io.github.gigafrosxh.erdultra.ErduToolWindowFactory"/>
+        <internalFileTemplate name="ERD-Ultra"/>
+    </extensions>
+
+    <actions>
+        <action id="ErdUltra.NewFile" class="io.github.gigafrosxh.erdultra.NewErduFileAction"
+                text="ERD-Ultra-Diagramm" description="Neues ERD-Ultra-Diagramm (.erdu) anlegen" icon="/icons/erdu.svg">
+            <add-to-group group-id="NewGroup" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

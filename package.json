@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:plugin": "tsc --noEmit && vite build --outDir jetbrains-plugin/build/webapp --emptyOutDir",
     "preview": "vite preview",
     "test": "vitest run",
     "tauri": "tauri",

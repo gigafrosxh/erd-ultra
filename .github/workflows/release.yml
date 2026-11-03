@@ -1,7 +1,7 @@
 name: Build & Release
 
-# Bei jedem Push werden Installer für macOS, Linux und Windows gebaut und als
-# GitHub-Release veröffentlicht:
+# Bei jedem Push werden Installer für macOS, Linux und Windows sowie das
+# JetBrains-Plugin (.zip) gebaut und als GitHub-Release veröffentlicht:
 #   main/master  → stabile Version (Patch/Minor/Major nach Commit-Nachrichten)
 #   release/*    → Release-Candidate (x.y.z-rc.N)
 #   alle anderen → Pre-Release (x.y.z-beta.N)
@@ -143,9 +143,46 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
 
+  jetbrains-plugin:
+    name: JetBrains-Plugin
+    needs: [version, create-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - run: npm ci
+
+      - name: Version setzen
+        run: node scripts/set-version.mjs ${{ needs.version.outputs.version }}
+
+      - name: Plugin bauen
+        working-directory: jetbrains-plugin
+        run: ./gradlew buildPlugin --no-configuration-cache
+
+      - name: An Release anhängen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -e
+          cp jetbrains-plugin/build/distributions/*.zip "ERD-Ultra-JetBrains-Plugin-${TAG}.zip"
+          gh release upload "$TAG" "ERD-Ultra-JetBrains-Plugin-${TAG}.zip" -R "$GITHUB_REPOSITORY" --clobber
+
   publish:
     name: Release veröffentlichen
-    needs: [version, create-release, build]
+    needs: [version, create-release, build, jetbrains-plugin]
     runs-on: ubuntu-latest
     steps:
       - env:

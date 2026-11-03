@@ -1,8 +1,31 @@
-// Dateizugriff: nativ über Tauri, im Browser über Download / Datei-Auswahl.
+// Dateizugriff: nativ über Tauri, im JetBrains-Plugin über die IDE-Brücke,
+// im Browser über Download / Datei-Auswahl.
 
 import { invoke } from "@tauri-apps/api/core";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+/** Vom JetBrains-Plugin vor dem App-Start eingebundene Brücke (siehe jetbrains-plugin/). */
+export interface IdeHost {
+  /** "editor": eingebettet in einen Editor-Tab einer .erdu-Datei, "toolwindow": eigenes Tool-Fenster */
+  mode: "editor" | "toolwindow";
+  dark: boolean;
+  call<T = unknown>(method: string, params?: unknown): Promise<T>;
+  on(event: string, fn: (payload: any) => void): () => void;
+}
+
+export const ide: IdeHost | null = (typeof window !== "undefined" && (window as any).__ERDU_IDE__) || null;
+export const isIde = ide !== null;
+
+// Trackpad-Pinch aus der IDE als Strg+Mausrad weitergeben – die Zeichenflächen zoomen darauf bereits
+// (Faktor wie in ui/viewport.ts: exp(-deltaY · 0.0025 · 2.5))
+ide?.on("pinch", ({ factor, x, y }: { factor: number; x: number; y: number }) => {
+  document.elementFromPoint(x, y)?.dispatchEvent(
+    new WheelEvent("wheel", { bubbles: true, cancelable: true, ctrlKey: true, clientX: x, clientY: y, deltaY: -Math.log(factor) / 0.00625 }),
+  );
+});
+/** Dateien können direkt per Pfad gelesen/geschrieben werden */
+export const hasFileSystem = isTauri || isIde;
 
 export interface FileFilter {
   name: string;
@@ -30,6 +53,9 @@ function browserDownload(name: string, data: string | Uint8Array, mime: string) 
 
 /** Speichern-Dialog. Gibt den Pfad (bzw. Dateinamen im Browser) zurück oder null bei Abbruch. */
 export async function saveFileAs(defaultName: string, filters: FileFilter[], data: string | Uint8Array, mime = "application/octet-stream"): Promise<string | null> {
+  if (ide) {
+    return ide.call<string | null>("saveFileAs", { defaultName, filters, ...encode(data) });
+  }
   if (!isTauri) {
     browserDownload(defaultName, data, mime);
     return defaultName;
@@ -41,13 +67,25 @@ export async function saveFileAs(defaultName: string, filters: FileFilter[], dat
   return path;
 }
 
+function encode(data: string | Uint8Array) {
+  return typeof data === "string" ? { text: data } : { base64: toBase64(data) };
+}
+
 export async function writeFileTo(path: string, data: string | Uint8Array): Promise<void> {
+  if (ide) {
+    await ide.call("writeFile", { path, ...encode(data) });
+    return;
+  }
   if (!isTauri) throw new Error("Direktes Schreiben nur in der Desktop-App möglich");
   if (typeof data === "string") await invoke("write_text_file", { path, contents: data });
   else await invoke("write_binary_file", { path, base64: toBase64(data) });
 }
 
 export async function openFile(filters: FileFilter[]): Promise<{ path: string; name: string; text: string } | null> {
+  if (ide) {
+    const f = await ide.call<{ path: string; text: string } | null>("openFile", { filters });
+    return f && { path: f.path, name: baseName(f.path), text: f.text };
+  }
   if (!isTauri) {
     return new Promise((resolve) => {
       const input = document.createElement("input");
@@ -69,6 +107,7 @@ export async function openFile(filters: FileFilter[]): Promise<{ path: string; n
 }
 
 export async function readFileAt(path: string): Promise<string> {
+  if (ide) return ide.call<string>("readFile", { path });
   return invoke<string>("read_text_file", { path });
 }
 

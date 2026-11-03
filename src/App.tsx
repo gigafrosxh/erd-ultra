@@ -5,9 +5,9 @@ import { ErExportSvg, LIGHT } from "./er/ErSvg";
 import { ErView } from "./er/ErView";
 import { parseErDsl } from "./er/dsl";
 import type { ErDiagram } from "./er/model";
-import { EXAMPLES } from "./examples";
+import { SIMPLE_EXAMPLE } from "./examples";
 import { elementToSvgString, svgToPng } from "./lib/exporter";
-import { baseName, isTauri, openFile, readFileAt, saveFileAs, setWindowTitle, startupFile, writeFileTo } from "./lib/platform";
+import { baseName, hasFileSystem, ide, openFile, readFileAt, saveFileAs, setWindowTitle, startupFile, writeFileTo } from "./lib/platform";
 import { layoutNewTables, serializeRelDsl } from "./rel/dsl";
 import { mapErToRelational } from "./rel/mapping";
 import type { RelSchema } from "./rel/model";
@@ -20,12 +20,12 @@ import { Icon } from "./ui/Icon";
 type Tab = "er" | "rel" | "data";
 
 const AUTOSAVE_KEY = "erd-ultra:autosave";
+/** Im JetBrains-Plugin als Editor einer .erdu-Datei: Inhalt kommt aus der IDE, nicht aus dem Autosave */
+const inIdeEditor = ide?.mode === "editor";
 
-function exampleDoc(id: string): Doc {
-  const ex = EXAMPLES.find((e) => e.id === id) ?? EXAMPLES[0];
-  const er = parseErDsl(ex.dsl).diagram;
-  const base = emptyDoc();
-  return syncRel({ ...base, er, erText: ex.dsl }, true);
+function exampleDoc(): Doc {
+  const er = parseErDsl(SIMPLE_EXAMPLE).diagram;
+  return syncRel({ ...emptyDoc(), er, erText: SIMPLE_EXAMPLE }, true);
 }
 
 /** Relationales Schema aus dem ER-Diagramm ableiten (Positionen bleiben erhalten). */
@@ -53,13 +53,14 @@ function syncRel(d: Doc, force = false): Doc {
 }
 
 function initialDoc(): Doc {
+  if (inIdeEditor) return emptyDoc();
   try {
     const saved = localStorage.getItem(AUTOSAVE_KEY);
     if (saved) return docFromFile(saved);
   } catch {
     /* ignorieren */
   }
-  return exampleDoc("tiergarten");
+  return emptyDoc();
 }
 
 interface Toast {
@@ -73,6 +74,7 @@ export default function App() {
   const { doc, update } = store;
   const [tab, setTab] = useState<Tab>("er");
   const [dark, setDark] = useState(() => {
+    if (ide) return ide.dark;
     try {
       const t = localStorage.getItem("erd-ultra:theme");
       if (t) return t === "dark";
@@ -82,6 +84,7 @@ export default function App() {
     return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
   });
   const [path, setPath] = useState<string | null>(() => {
+    if (inIdeEditor) return null;
     try {
       return localStorage.getItem("erd-ultra:path");
     } catch {
@@ -89,10 +92,14 @@ export default function App() {
     }
   });
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [menu, setMenu] = useState<null | "file" | "examples">(null);
+  const [menu, setMenu] = useState<null | "file">(null);
   const [fitSignal, setFitSignal] = useState(1);
   const erCanvas = useRef<ErCanvasHandle | null>(null);
   const relFit = useRef<() => void>(() => {});
+  // IDE-Editor: zuletzt mit dem IDE-Dokument abgeglichener Inhalt und dessen Änderungsstatus
+  const ideSynced = useRef<string | null>(null);
+  const [ideModified, setIdeModified] = useState(false);
+  const dirty = inIdeEditor ? ideModified : store.dirty;
 
   const toast = useCallback((msg: string, kind: "error" | "info" = "info") => {
     const id = Date.now() + Math.random();
@@ -111,6 +118,7 @@ export default function App() {
 
   // Automatisch lokal sichern (Wiederherstellung nach Absturz/Neustart)
   useEffect(() => {
+    if (inIdeEditor) return;
     const h = setTimeout(() => {
       try {
         localStorage.setItem(AUTOSAVE_KEY, docToFile(doc));
@@ -124,8 +132,51 @@ export default function App() {
   }, [doc, path]);
 
   useEffect(() => {
-    setWindowTitle(`${store.dirty ? "• " : ""}${path ? baseName(path) : "Unbenannt"} – ERD-Ultra`);
-  }, [path, store.dirty]);
+    setWindowTitle(`${dirty ? "• " : ""}${path ? baseName(path) : "Unbenannt"} – ERD-Ultra`);
+  }, [path, dirty]);
+
+  // JetBrains-Plugin: Design der IDE folgen, Editor-Inhalt mit dem IDE-Dokument abgleichen
+  useEffect(() => {
+    if (!ide) return;
+    const offs = [ide.on("theme", (d: boolean) => setDark(d))];
+    if (inIdeEditor) {
+      const load = (text: string) => {
+        if (text === ideSynced.current) return;
+        try {
+          const d = text.trim() ? docFromFile(text) : emptyDoc();
+          ideSynced.current = docToFile(d);
+          store.replace(d);
+          setFitSignal((x) => x + 1);
+        } catch {
+          // z. B. während die Datei im Text-Editor bearbeitet wird – letzten gültigen Stand behalten
+        }
+      };
+      offs.push(ide.on("loadDoc", load));
+      offs.push(ide.on("modified", (m: boolean) => setIdeModified(m)));
+      ide
+        .call<{ path: string; text: string; modified: boolean }>("ready")
+        .then((f) => {
+          setPath(f.path);
+          setIdeModified(f.modified);
+          load(f.text);
+          if (ideSynced.current === null) toast("Datei konnte nicht gelesen werden – sie ist keine gültige ERD-Ultra-Datei.", "error");
+        })
+        .catch((e) => toast(String(e), "error"));
+    }
+    return () => offs.forEach((off) => off());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!inIdeEditor || ideSynced.current === null) return;
+    const h = setTimeout(() => {
+      const text = docToFile(doc);
+      if (text === ideSynced.current) return;
+      ideSynced.current = text;
+      ide!.call("docChanged", { text }).catch((e) => toast(String(e), "error"));
+    }, 250);
+    return () => clearTimeout(h);
+  }, [doc, toast]);
 
   // Datei, die per Doppelklick geöffnet wurde
   useEffect(() => {
@@ -178,7 +229,14 @@ export default function App() {
   const save = async (as = false) => {
     try {
       const content = docToFile(doc);
-      if (path && !as && isTauri) {
+      if (inIdeEditor && !as) {
+        ideSynced.current = content;
+        await ide!.call("saveDoc", { text: content });
+      } else if (inIdeEditor) {
+        const p = await saveFileAs(baseName(path ?? "diagramm.erdu"), FILTER, content, "application/json");
+        if (p) toast("Kopie gespeichert", "info");
+        return;
+      } else if (path && !as && hasFileSystem) {
         await writeFileTo(path, content);
       } else {
         const p = await saveFileAs(path ? baseName(path) : "diagramm.erdu", FILTER, content, "application/json");
@@ -195,13 +253,18 @@ export default function App() {
     try {
       const f = await openFile([...FILTER, { name: "ER-Code", extensions: ["erd", "txt"] }]);
       if (!f) return;
+      if (inIdeEditor && f.name.toLowerCase().endsWith(".erdu")) {
+        await ide!.call("openInEditor", { path: f.path });
+        return;
+      }
+      if (inIdeEditor && dirty && !confirm("Den Inhalt dieser Datei durch den ER-Code ersetzen?")) return;
       if (f.name.toLowerCase().endsWith(".erdu")) {
         store.replace(docFromFile(f.text));
         setPath(f.path);
       } else {
         const r = parseErDsl(f.text);
         store.replace(syncRel({ ...emptyDoc(), er: r.diagram, erText: f.text }, true));
-        setPath(null);
+        if (!inIdeEditor) setPath(null);
         if (r.errors.length) toast(`${r.errors.length} Fehler im Code`, "error");
       }
       setFitSignal((x) => x + 1);
@@ -210,15 +273,15 @@ export default function App() {
     }
   };
   const newDoc = () => {
-    if (store.dirty && !confirm("Ungespeicherte Änderungen verwerfen?")) return;
+    if (dirty && !confirm("Ungespeicherte Änderungen verwerfen?")) return;
     store.replace(emptyDoc());
-    setPath(null);
+    if (!inIdeEditor) setPath(null);
     setTab("er");
   };
-  const loadExample = (id: string) => {
-    if (store.dirty && !confirm("Ungespeicherte Änderungen verwerfen?")) return;
-    store.replace(exampleDoc(id));
-    setPath(null);
+  const loadExample = () => {
+    if (dirty && !confirm("Ungespeicherte Änderungen verwerfen?")) return;
+    store.replace(exampleDoc());
+    if (!inIdeEditor) setPath(null);
     setMenu(null);
     setTab("er");
     setFitSignal((x) => x + 1);
@@ -342,6 +405,7 @@ export default function App() {
             <div className="menu">
               {item("Neu", newDoc, `${mod}N`, "file")}
               {item("Öffnen…", open, `${mod}O`, "folder")}
+              {item("Einfaches Beispiel laden", loadExample, undefined, "sparkles")}
               {item("Speichern", () => save(false), `${mod}S`, "save")}
               {item("Speichern unter…", () => save(true), `⇧${mod}S`)}
               <div className="menu-sep" />
@@ -351,12 +415,6 @@ export default function App() {
               {item("SQL (CREATE TABLE) exportieren", exportSql, undefined, "database")}
             </div>
           )}
-        </div>
-        <div className="menu-wrap">
-          <button className={`btn ghost ${menu === "examples" ? "on" : ""}`} onClick={() => setMenu(menu === "examples" ? null : "examples")}>
-            Beispiele <Icon name="chevron" size={14} />
-          </button>
-          {menu === "examples" && <div className="menu">{EXAMPLES.map((ex) => item(ex.title, () => loadExample(ex.id), undefined, "sparkles"))}</div>}
         </div>
         <div className="tabs">
           <button className={tab === "er" ? "on" : ""} onClick={() => setTab("er")}>
@@ -371,7 +429,7 @@ export default function App() {
         </div>
         <div className="top-actions">
           <span className="file-name" title={path ?? "Noch nicht gespeichert"}>
-            {store.dirty && <i className="dot" />}
+            {dirty && <i className="dot" />}
             {path ? baseName(path) : "Unbenannt"}
           </span>
           <button className="icon-btn" title={`Rückgängig (${mod}Z)`} disabled={!store.canUndo} onClick={store.undo}>

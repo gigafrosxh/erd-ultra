@@ -4,10 +4,11 @@ import { parseRelDsl, serializeRelDsl } from "../src/rel/dsl";
 import { mapErToRelational, type InheritanceStrategy } from "../src/rel/mapping";
 import { generateData, datasetToSql } from "../src/data/generator";
 import { schemaToSql } from "../src/rel/sql";
-import { EXAMPLES } from "../src/examples";
+import { SIMPLE_EXAMPLE } from "../src/examples";
+import { EXAMPLES } from "./fixtures";
 
 describe("ER-DSL", () => {
-  for (const ex of EXAMPLES) {
+  for (const ex of [{ id: "einfach", dsl: SIMPLE_EXAMPLE }, ...EXAMPLES]) {
     it(`parst Beispiel ${ex.id} ohne Fehler und Round-Trip ist stabil`, () => {
       const r = parseErDsl(ex.dsl);
       expect(r.errors.map((e) => e.message)).toEqual([]);
