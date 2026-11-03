@@ -12,6 +12,7 @@ import {
   confirmDialog,
   hasFileSystem,
   ide,
+  installUpdate,
   isTauri,
   onCloseRequested,
   onFileOpened,
@@ -124,6 +125,8 @@ export default function App() {
   const [menu, setMenu] = useState<null | "file">(null);
   const [fitSignal, setFitSignal] = useState(1);
   const [available, setAvailable] = useState<UpdateInfo | null>(null);
+  /** Fortschritt des laufenden Updates: null = unbekannt, undefined = kein Update läuft */
+  const [updating, setUpdating] = useState<number | null | undefined>(undefined);
   const erCanvas = useRef<ErCanvasHandle | null>(null);
   const relFit = useRef<() => void>(() => {});
   // IDE-Editor: zuletzt mit dem IDE-Dokument abgeglichener Inhalt und dessen Änderungsstatus
@@ -582,18 +585,31 @@ export default function App() {
           </div>
           <button
             className="btn primary"
-            onClick={() => {
+            disabled={updating !== undefined}
+            onClick={async () => {
+              if (isTauri) {
+                if (dirty && !(await confirmDialog(`${DISCARD_MSG}\n\nERD-Ultra wird für das Update neu gestartet.`, "Aktualisieren"))) return;
+                setUpdating(null);
+                try {
+                  // Nach erfolgreicher Installation startet die App neu
+                  if (await installUpdate(setUpdating)) return;
+                } catch (e) {
+                  toast(`Update konnte nicht installiert werden: ${e instanceof Error ? e.message : e}. Die Release-Seite wird geöffnet.`, "error");
+                }
+                setUpdating(undefined);
+              }
               openReleasePage(available.url).catch((e) => toast(String(e), "error"));
               setAvailable(null);
             }}
           >
-            Aktualisieren
+            {updating === undefined ? "Aktualisieren" : updating === null || updating >= 1 ? "Wird installiert…" : `Lädt… ${Math.round(updating * 100)} %`}
           </button>
-          <button className="btn" onClick={() => setAvailable(null)} title="Beim nächsten Start erneut erinnern">
+          <button className="btn" disabled={updating !== undefined} onClick={() => setAvailable(null)} title="Beim nächsten Start erneut erinnern">
             Später
           </button>
           <button
             className="btn ghost"
+            disabled={updating !== undefined}
             onClick={() => {
               try {
                 localStorage.setItem(SKIP_UPDATE_KEY, available.version);

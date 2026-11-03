@@ -41,7 +41,9 @@
     ],
     "fileAssociations": [
       {
-        "ext": ["erdu"],
+        "ext": [
+          "erdu"
+        ],
         "name": "ERD-Ultra Projekt",
         "description": "ERD-Ultra Projektdatei",
         "mimeType": "application/x-erd-ultra",
@@ -49,7 +51,21 @@
       }
     ],
     "windows": {
-      "nsis": { "installMode": "currentUser" }
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg2MTUwMTcwMDQ5MjBDOUIKUldTYkRKSUVjQUVWaHZ1L1Y5S1FBcW85blhGQndmVnJvYUlJTUpYUnY1OElxK3lDc0lzQTVndFAK",
+      "endpoints": [
+        "https://github.com/gigafrosxh/erd-ultra/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

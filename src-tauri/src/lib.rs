@@ -65,6 +65,15 @@ fn open_release_page(url: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .setup(|app| {
+            // Updates direkt in der App installieren (Desktop)
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            #[cfg(not(desktop))]
+            let _ = app;
+            Ok(())
+        })
         .manage(PendingFiles::default())
         .invoke_handler(tauri::generate_handler![
             read_text_file,

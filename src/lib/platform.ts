@@ -175,6 +175,29 @@ export async function setWindowTitle(title: string) {
   }
 }
 
+/**
+ * Neue Version direkt herunterladen, installieren und die App neu starten (Desktop-App).
+ * Gibt false zurück, wenn kein passendes signiertes Update-Paket bereitsteht.
+ */
+export async function installUpdate(onProgress: (fraction: number | null) => void): Promise<boolean> {
+  if (!isTauri) return false;
+  const { check } = await import("@tauri-apps/plugin-updater");
+  const update = await check();
+  if (!update) return false;
+  let total = 0;
+  let done = 0;
+  await update.downloadAndInstall((e) => {
+    if (e.event === "Started") total = e.data.contentLength ?? 0;
+    else if (e.event === "Progress") {
+      done += e.data.chunkLength;
+      onProgress(total ? done / total : null);
+    } else onProgress(1);
+  });
+  const { relaunch } = await import("@tauri-apps/plugin-process");
+  await relaunch();
+  return true;
+}
+
 /** Release-Seite im System-Browser öffnen */
 export async function openReleasePage(url: string): Promise<void> {
   if (ide) await ide.call("openUrl", { url });

@@ -109,6 +109,8 @@ jobs:
             os: windows-latest
             args: --bundles msi,nsis
     runs-on: ${{ matrix.os }}
+    env:
+      HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -136,9 +138,20 @@ jobs:
       - name: Version setzen
         run: node scripts/set-version.mjs ${{ needs.version.outputs.version }}
 
+      # Update-Pakete (.app.tar.gz, .sig, latest.json) werden mit diesem Schlüssel signiert.
+      # Ohne das Secret entstehen nur die Installer, die App öffnet dann beim Aktualisieren die Release-Seite.
+      - name: Update-Pakete nur mit Signaturschlüssel
+        if: env.HAS_UPDATER_KEY != 'true'
+        shell: bash
+        run: |
+          echo "::warning::Secret TAURI_SIGNING_PRIVATE_KEY fehlt – keine In-App-Updates für dieses Release"
+          node -e 'const f="src-tauri/tauri.conf.json";const fs=require("fs");const c=JSON.parse(fs.readFileSync(f));c.bundle.createUpdaterArtifacts=false;fs.writeFileSync(f,JSON.stringify(c,null,2))'
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           # RPM verträgt keine Pre-Release-Version → bei Pre-Releases separat im nächsten Schritt
@@ -149,6 +162,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -e
           node scripts/set-version.mjs ${{ needs.version.outputs.version }} --rpm
