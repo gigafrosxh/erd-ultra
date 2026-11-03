@@ -141,7 +141,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: ${{ matrix.args }}
+          # RPM verträgt keine Pre-Release-Version → bei Pre-Releases separat im nächsten Schritt
+          args: ${{ runner.os == 'Linux' && needs.version.outputs.prerelease == 'true' && '--bundles deb,appimage' || matrix.args }}
+
+      - name: RPM für Pre-Release
+        if: runner.os == 'Linux' && needs.version.outputs.prerelease == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -e
+          node scripts/set-version.mjs ${{ needs.version.outputs.version }} --rpm
+          npm run tauri build -- --bundles rpm
+          gh release upload "$TAG" src-tauri/target/release/bundle/rpm/*.rpm -R "$GITHUB_REPOSITORY" --clobber
 
   jetbrains-plugin:
     name: JetBrains-Plugin
