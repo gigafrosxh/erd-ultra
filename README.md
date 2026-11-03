@@ -100,7 +100,7 @@ ERD-Ultra gibt es auch als Plugin für IntelliJ IDEA, PyCharm, DataGrip und die 
 - `.erdu`-Dateien öffnen sich im grafischen ERD-Ultra-Editor. Der JSON-Text bleibt als zweiter Reiter erreichbar, Speichern, Änderungsmarkierung, lokale Historie und Git laufen wie bei jeder anderen Datei.
 - Das Tool-Fenster **ERD-Ultra** (rechts) enthält die komplette App.
 - *Neu → ERD-Ultra-Diagramm* legt ein leeres Diagramm an.
-- Zoomen per Trackpad (Pinch) oder Strg/⌘ + Mausrad.
+- Zoomen per Scrollen (Mausrad/Trackpad) oder Pinch; verschieben per Ziehen der freien Fläche oder Shift + Rad.
 
 Installation: `ERD-Ultra-JetBrains-Plugin-<version>.zip` aus dem Release laden, dann in der IDE *Einstellungen → Plugins → ⚙ → Plugin von Datenträger installieren…*.
 

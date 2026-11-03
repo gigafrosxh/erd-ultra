@@ -134,7 +134,7 @@ export function ErProperties({ diagram, selNodes, selEdge, onChange, select, onD
             <li>Doppelklick auf Element: umbenennen</li>
             <li>Am blauen <b>+</b> ziehen: verbinden</li>
             <li>Werkzeug wählen und auf eine Entität klicken: direkt anhängen</li>
-            <li>Freie Fläche ziehen oder Trackpad: verschieben, ⌘/Strg + Rad: Zoom</li>
+            <li>Freie Fläche ziehen oder Shift + Rad: verschieben, Scrollen: Zoom</li>
             <li>Shift + Ziehen: Mehrfachauswahl</li>
           </ul>
         </div>

@@ -69,20 +69,24 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>, initial: Vi
     [svgRef],
   );
 
-  // Mausrad/Trackpad: Strg/⌘ + Rad = Zoom, sonst verschieben
+  // Mausrad/Trackpad: Scrollen = Zoom zur Mausposition, Shift + Rad = verschieben
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const r = el.getBoundingClientRect();
-      if (e.ctrlKey || e.metaKey) {
-        const factor = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0025) * (e.ctrlKey && !e.metaKey ? 2.5 : 1));
-        zoomAt(factor, e.clientX - r.left, e.clientY - r.top);
-      } else {
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey) {
         const m = e.deltaMode === 1 ? 16 : 1;
-        setView((v) => ({ ...v, x: v.x - (e.shiftKey ? e.deltaY : e.deltaX) * m, y: v.y - (e.shiftKey ? 0 : e.deltaY) * m }));
+        // Shift: vertikales Rad verschiebt waagrecht, Trackpad in beide Richtungen
+        const dx = e.deltaX || e.deltaY;
+        const dy = e.deltaX ? e.deltaY : 0;
+        setView((v) => ({ ...v, x: v.x - dx * m, y: v.y - dy * m }));
+        return;
       }
+      const delta = e.deltaY || (e.ctrlKey || e.metaKey ? 0 : e.deltaX);
+      const factor = Math.exp(-delta * (e.deltaMode === 1 ? 0.05 : 0.0025) * (e.ctrlKey && !e.metaKey ? 2.5 : 1));
+      zoomAt(factor, e.clientX - r.left, e.clientY - r.top);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
