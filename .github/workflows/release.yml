@@ -1,0 +1,160 @@
+name: Build & Release
+
+# Bei jedem Push werden Installer für macOS, Linux und Windows gebaut und als
+# GitHub-Release veröffentlicht:
+#   main/master  → stabile Version (Patch/Minor/Major nach Commit-Nachrichten)
+#   release/*    → Release-Candidate (x.y.z-rc.N)
+#   alle anderen → Pre-Release (x.y.z-beta.N)
+#   Tag vX.Y.Z   → genau diese Version
+# Mit "[skip release]" in der Commit-Nachricht wird kein Release erstellt.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Versionssprung"
+        type: choice
+        options: [auto, patch, minor, major, prerelease]
+        default: auto
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  version:
+    name: Version bestimmen
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: v
+        run: node scripts/next-version.mjs
+        env:
+          BUMP: ${{ github.event.inputs.bump != 'auto' && github.event.inputs.bump || '' }}
+
+  create-release:
+    name: Release anlegen
+    needs: version
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.r.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: r
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PRE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          set -e
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG existiert bereits"
+          else
+            FLAGS="--draft --generate-notes --target $GITHUB_SHA"
+            if [ "$PRE" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
+            gh release create "$TAG" $FLAGS --title "ERD-Ultra $TAG"
+          fi
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -n1)
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Installer (${{ matrix.name }})
+    needs: [version, create-release]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Universal)
+            os: macos-latest
+            args: --target universal-apple-darwin
+          - name: Linux
+            os: ubuntu-22.04
+            args: --bundles deb,rpm,appimage
+          - name: Windows 11
+            os: windows-latest
+            args: --bundles msi,nsis
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux-Abhängigkeiten
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      - name: Version setzen
+        run: node scripts/set-version.mjs ${{ needs.version.outputs.version }}
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+  publish:
+    name: Release veröffentlichen
+    needs: [version, create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PRE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          if [ "$PRE" = "true" ]; then
+            gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false --prerelease
+          else
+            gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false --latest
+          fi

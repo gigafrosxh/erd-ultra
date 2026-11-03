@@ -1,0 +1,40 @@
+# Abhängigkeiten
+node_modules/
+
+# Build-Ausgaben
+dist/
+dist-ssr/
+build/
+out/
+target/
+src-tauri/target/
+src-tauri/gen/
+coverage/
+*.tsbuildinfo
+
+# Installer / Bundles
+*.dmg
+*.msi
+*.exe
+*.AppImage
+*.deb
+*.rpm
+*.app/
+
+# Lokale Konfiguration & Secrets
+.env
+.env.*
+*.local
+config.local.*
+.vscode/
+.idea/
+.claude/
+.fleet/
+*.code-workspace
+
+# System / Logs
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+public/__preview/
