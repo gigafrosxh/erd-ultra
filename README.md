@@ -2,6 +2,8 @@
 
 ERD-Ultra ist eine Desktop-App für **macOS, Linux und Windows 11**. Damit erstellst du ER-Diagramme in Chen-Notation und relationale Schemas, grafisch oder per Code, und erzeugst passende Testdaten.
 
+![ER-Diagramm in Chen-Notation](docs/screenshots/er-grafisch.png)
+
 ## Funktionen
 
 **ER-Diagramme (Chen-Notation)**
@@ -18,6 +20,12 @@ ERD-Ultra ist eine Desktop-App für **macOS, Linux und Windows 11**. Damit erste
   - Notizen und Legende
 - Export als **PNG** (hochaufgelöst) und **SVG**, Speichern im eigenen Format **`.erdu`**
 
+![Grafischer Editor und ER-Code nebeneinander](docs/screenshots/er-editor.png)
+
+Auch im dunklen Design:
+
+![ER-Diagramm im dunklen Design](docs/screenshots/er-dunkel.png)
+
 **Relationale Schemas**
 - Automatische Abbildung ER → Relational mit wählbarer Vererbungs-Strategie:
   - Vertical Mapping
@@ -27,10 +35,14 @@ ERD-Ultra ist eine Desktop-App für **macOS, Linux und Windows 11**. Damit erste
 - Grafischer Editor im Stil von dbdiagram.io: Tabellen, Spalten, PK, NOT NULL, UNIQUE und Fremdschlüssel per Ziehen
 - Code-Editor (an DBML angelehnt), Lehrbuch-Notation `tier(tier_id, name, ↑gehege_id)`, SQL-DDL für PostgreSQL, MySQL, SQLite und SQL Server
 
+![Relationales Schema mit Schema-Code](docs/screenshots/relationales-schema.png)
+
 **Testdaten**
 - Realistische deutsche Testdaten, die zu Spaltennamen und Typen passen (Namen, Orte, Datumswerte, Gehälter, …)
 - Eindeutige Primärschlüssel, gültige Fremdschlüssel, wählbarer NULL-Anteil und reproduzierbarer Seed
 - Export als SQL (`INSERT`, optional mit `CREATE TABLE`), CSV oder JSON
+
+![Testdaten-Generator](docs/screenshots/testdaten.png)
 
 ## ER-Code (Beispiel)
 
