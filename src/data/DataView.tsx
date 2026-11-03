@@ -24,7 +24,7 @@ export function DataView({ schema, gen, dialect, onGen, onSave, toast }: Props) 
   const rows = cur ? data[cur.name] ?? [] : [];
   const total = order.reduce((s, k) => s + data[k].length, 0);
 
-  const sql = () => (withDdl ? schemaToSql(schema, dialect) + "\n" : "") + datasetToSql(schema, data);
+  const sql = () => (withDdl ? schemaToSql(schema, dialect) + "\n" : "") + datasetToSql(schema, data, dialect);
 
   if (!schema.tables.length) {
     return (

@@ -1,6 +1,6 @@
 // SQL-DDL aus dem relationalen Schema erzeugen.
 
-import { type RelSchema, sqlIdent } from "./model";
+import type { RelSchema } from "./model";
 
 export type SqlDialect = "postgres" | "mysql" | "sqlite" | "sqlserver";
 
@@ -11,21 +11,62 @@ export const DIALECT_LABELS: Record<SqlDialect, string> = {
   sqlserver: "SQL Server",
 };
 
-function mapType(type: string, dialect: SqlDialect): string {
-  const t = type.toLowerCase();
+// Häufige Schlüsselwörter, die in mindestens einem Dialekt reserviert sind und als Name maskiert werden müssen
+const RESERVED = new Set(
+  `add all alter and any as asc authorization begin between both by case cast check collate column commit constraint create cross
+current current_date current_time current_timestamp current_user database date day default delete desc describe distinct do drop
+else end except exec exists explain false fetch file for foreign from full function grant group having hour identity if in index
+inner insert intersect interval into is join key keys leading left level like limit match merge minute month natural not null
+of offset on only or order outer over partition percent plan position primary procedure public range rank read references
+return returning revoke right rollback row rows schema second select session_user set show some table then time timestamp to
+top trailing transaction trigger true union unique update usage user using value values view when where window with write year`.split(/\s+/),
+);
+
+/** Bezeichner für den Dialekt maskieren, falls nötig (Sonderzeichen oder reserviertes Wort) */
+export function quoteIdent(name: string, dialect: SqlDialect = "postgres"): string {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !RESERVED.has(name.toLowerCase())) return name;
+  if (dialect === "mysql") return `\`${name.replace(/`/g, "``")}\``;
+  if (dialect === "sqlserver") return `[${name.replace(/]/g, "]]")}]`;
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/** Datentyp in die Schreibweise des Dialekts übersetzen */
+export function mapType(type: string, dialect: SqlDialect): string {
+  const t = type.trim().toLowerCase();
+  const args = t.match(/\(.*\)$/)?.[0] ?? "";
+  const base = t.replace(/\(.*\)$/, "").trim();
   if (dialect === "sqlite") {
-    if (/int|bool/.test(t)) return "INTEGER";
-    if (/dec|num|float|double|real/.test(t)) return "REAL";
+    if (/int|bool|serial|bit/.test(base)) return "INTEGER";
+    if (/dec|num|float|double|real/.test(base)) return "REAL";
+    if (/blob|bytea|binary/.test(base)) return "BLOB";
     return "TEXT";
   }
-  if (t === "boolean" || t === "bool") return dialect === "sqlserver" ? "BIT" : dialect === "mysql" ? "TINYINT(1)" : "BOOLEAN";
-  if (t === "text" && dialect === "sqlserver") return "NVARCHAR(MAX)";
-  if (t === "timestamp" && dialect === "sqlserver") return "DATETIME2";
+  const bool = base === "boolean" || base === "bool" || base === "bit";
+  if (dialect === "postgres") {
+    if (bool) return "BOOLEAN";
+    if (base === "tinyint") return "SMALLINT";
+    if (base === "datetime" || base === "datetime2") return "TIMESTAMP";
+    if (base === "double") return "DOUBLE PRECISION";
+    if (base === "nvarchar") return `VARCHAR${args.toUpperCase() === "(MAX)" ? "" : args}`;
+    if (base === "blob" || base === "varbinary" || base === "binary") return "BYTEA";
+  } else if (dialect === "mysql") {
+    if (bool) return "TINYINT(1)";
+    if (base === "bytea") return "BLOB";
+    if (base === "datetime2") return "DATETIME";
+    if (base === "serial") return "INT AUTO_INCREMENT";
+  } else if (dialect === "sqlserver") {
+    if (bool) return "BIT";
+    if (base === "text") return "NVARCHAR(MAX)";
+    if (base === "timestamp") return "DATETIME2";
+    if (base === "double" || base === "double precision") return "FLOAT";
+    if (base === "serial") return "INT IDENTITY";
+    if (base === "bytea" || base === "blob") return "VARBINARY(MAX)";
+  }
   return type.toUpperCase();
 }
 
 export function schemaToSql(schema: RelSchema, dialect: SqlDialect = "postgres"): string {
-  const q = (s: string) => (dialect === "mysql" && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(s) ? `\`${s}\`` : sqlIdent(s));
+  const q = (s: string) => quoteIdent(s, dialect);
   const out: string[] = [];
   const fks: string[] = [];
   for (const t of schema.tables) {

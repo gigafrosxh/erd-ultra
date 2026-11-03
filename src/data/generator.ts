@@ -1,6 +1,7 @@
 // Testdaten-Generator für relationale Schemas.
 
-import { type RelColumn, type RelSchema, type RelTable, sqlIdent } from "../rel/model";
+import { type RelColumn, type RelSchema, type RelTable } from "../rel/model";
+import { type SqlDialect, quoteIdent } from "../rel/sql";
 
 export type Value = string | number | boolean | null;
 export type Row = Record<string, Value>;
@@ -46,6 +47,9 @@ export function generateData(schema: RelSchema, opts: GenOptions = defaultGenOpt
   const pick = <T,>(xs: T[]): T => xs[Math.floor(rnd() * xs.length)];
   const byName = new Map(schema.tables.map((t) => [t.name, t]));
   const data: Dataset = {};
+  // Untertabellen (Schlüssel = Schlüssel der Obertabelle) teilen sich deren Zeilen ohne Überschneidung,
+  // damit ein Datensatz bei disjunkter Spezialisierung nur in einer Untertabelle landet
+  const takenParents = new Map<string, Set<string>>();
 
   // Topologische Reihenfolge (Referenzen zuerst)
   const order: RelTable[] = [];
@@ -82,13 +86,22 @@ export function generateData(schema: RelSchema, opts: GenOptions = defaultGenOpt
       } else groups.push({ target: c.ref.table, cols: [c] });
     }
 
+    const subtypeOf = groups.find((g) => g.target !== t.name && g.cols.length === pkCols.length && g.cols.every((c) => c.pk));
+    const parentKey = (g: { cols: RelColumn[] }, src: Row) => JSON.stringify(g.cols.map((c) => src[c.ref!.column] ?? null));
+
     let attempts = 0;
     while (rows.length < n && attempts < n * 30) {
       attempts++;
       const i = rows.length;
       const row: Row = {};
+      let exhausted = false;
       for (const g of groups) {
-        const pool = g.target === t.name ? rows : data[g.target];
+        let pool = g.target === t.name ? rows : data[g.target];
+        if (g === subtypeOf && pool) {
+          const taken = takenParents.get(g.target);
+          if (taken) pool = pool.filter((r) => !taken.has(parentKey(g, r)));
+          if (!pool.length) exhausted = true;
+        }
         const optional = g.cols.every((c) => !c.notNull && !c.pk);
         if (!pool || !pool.length || (optional && rnd() < (g.target === t.name ? 0.3 : opts.nullRate))) {
           for (const c of g.cols) row[c.name] = null;
@@ -97,6 +110,7 @@ export function generateData(schema: RelSchema, opts: GenOptions = defaultGenOpt
         const src = pick(pool);
         for (const c of g.cols) row[c.name] = src[c.ref!.column] ?? null;
       }
+      if (exhausted) break;
       for (const c of t.columns) {
         if (c.ref) continue;
         if (!c.notNull && !c.pk && !c.unique && rnd() < opts.nullRate) {
@@ -121,6 +135,11 @@ export function generateData(schema: RelSchema, opts: GenOptions = defaultGenOpt
         else s.add(k);
       }
       if (dup) continue;
+      if (subtypeOf) {
+        const taken = takenParents.get(subtypeOf.target) ?? new Set<string>();
+        takenParents.set(subtypeOf.target, taken);
+        taken.add(JSON.stringify(subtypeOf.cols.map((c) => row[c.name])));
+      }
       rows.push(row);
     }
   }
@@ -143,24 +162,44 @@ export function generateData(schema: RelSchema, opts: GenOptions = defaultGenOpt
     }
     if (/timestamp|datetime/.test(type)) return `${int(2018, 2026)}-${String(int(1, 12)).padStart(2, "0")}-${String(int(1, 28)).padStart(2, "0")} ${String(int(7, 19)).padStart(2, "0")}:${String(int(0, 59)).padStart(2, "0")}:00`;
     if (/^time/.test(type)) return `${String(int(6, 20)).padStart(2, "0")}:${pick(["00", "15", "30", "45"])}:00`;
-    if (/int|serial|number|numeric|decimal|float|double|real/.test(type)) {
-      const dec = /decimal|numeric|float|double|real/.test(type);
-      let v: number;
-      if (/gehalt|lohn|salary/.test(name)) v = int(2200, 7500) + (dec ? int(0, 99) / 100 : 0);
-      else if (/preis|price|kosten|betrag/.test(name)) v = int(1, 500) + (dec ? int(0, 99) / 100 : 0);
-      else if (/plz|zip/.test(name)) return int(10000, 99999);
-      else if (/jahr|year/.test(name)) return int(1990, 2026);
-      else if (/alter|age/.test(name)) return int(1, 80);
-      else if (/tragzeit/.test(name)) return int(20, 650);
-      else if (/spannweite/.test(name)) return int(15, 300);
-      else if (/temp/.test(name)) v = int(10, 30) + (dec ? int(0, 9) / 10 : 0);
-      else if (/flaeche|fläche|groesse|größe/.test(name)) v = int(20, 5000);
-      else if (/matrikel/.test(name)) return 100000 + i * 7 + int(0, 6);
-      else if (c.pk || c.unique) return i + 1;
-      else v = int(1, 100) + (dec ? int(0, 99) / 100 : 0);
-      return dec ? Math.round(v * 100) / 100 : Math.round(v);
+    if (/int|serial|number|numeric|decimal|float|double|real/.test(type)) return fitNumber(numberFor(c, name, type, i), type);
+    return textFor(c, name, type, tname, i);
+  }
+
+  /** Zahl an den Wertebereich des Typs anpassen: decimal(p,s), tinyint, smallint */
+  function fitNumber(v: number, type: string): number {
+    const m = type.match(/(?:decimal|numeric|number)\s*\(\s*(\d+)\s*(?:,\s*(\d+))?\s*\)/);
+    if (m) {
+      const p = Number(m[1]);
+      const sc = Number(m[2] ?? 0);
+      const max = 10 ** (p - sc) - 10 ** -sc;
+      if (Math.abs(v) > max) v = rnd() * max;
+      const f = 10 ** sc;
+      return Math.round(v * f) / f;
     }
-    // Text
+    const max = /tinyint/.test(type) ? 127 : /smallint/.test(type) ? 32767 : Infinity;
+    return v > max ? int(0, max) : v;
+  }
+
+  function numberFor(c: RelColumn, name: string, type: string, i: number): number {
+    const dec = /decimal|numeric|float|double|real/.test(type);
+    let v: number;
+    if (/gehalt|lohn|salary/.test(name)) v = int(2200, 7500) + (dec ? int(0, 99) / 100 : 0);
+    else if (/preis|price|kosten|betrag/.test(name)) v = int(1, 500) + (dec ? int(0, 99) / 100 : 0);
+    else if (/plz|zip/.test(name)) return int(10000, 99999);
+    else if (/jahr|year/.test(name)) return int(1990, 2026);
+    else if (/alter|age/.test(name)) return int(1, 80);
+    else if (/tragzeit/.test(name)) return int(20, 650);
+    else if (/spannweite/.test(name)) return int(15, 300);
+    else if (/temp/.test(name)) v = int(10, 30) + (dec ? int(0, 9) / 10 : 0);
+    else if (/flaeche|fläche|groesse|größe/.test(name)) v = int(20, 5000);
+    else if (/matrikel/.test(name)) return 100000 + i * 7 + int(0, 6);
+    else if (c.pk || c.unique) return i + 1;
+    else v = int(1, 100) + (dec ? int(0, 99) / 100 : 0);
+    return dec ? Math.round(v * 100) / 100 : Math.round(v);
+  }
+
+  function textFor(c: RelColumn, name: string, type: string, tname: string, i: number): string {
     const persony = /person|mitarbeiter|kunde|student|pfleger|lehrer|angestellt|user|benutzer|employee|customer|patient|arzt/.test(tname);
     let s: string;
     if (/vorname|first/.test(name)) s = pick(VORNAMEN);
@@ -190,24 +229,26 @@ export function generateData(schema: RelSchema, opts: GenOptions = defaultGenOpt
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export function sqlLiteral(v: Value): string {
+export function sqlLiteral(v: Value, dialect: SqlDialect = "postgres"): string {
   if (v === null) return "NULL";
-  if (typeof v === "boolean") return v ? "TRUE" : "FALSE";
+  if (typeof v === "boolean") return dialect === "sqlserver" || dialect === "sqlite" ? (v ? "1" : "0") : v ? "TRUE" : "FALSE";
   if (typeof v === "number") return String(v);
-  return `'${v.replace(/'/g, "''")}'`;
+  const s = `'${v.replace(/'/g, "''")}'`;
+  return dialect === "sqlserver" && /[^\x00-\x7f]/.test(v) ? `N${s}` : s;
 }
 
-export function datasetToSql(schema: RelSchema, data: Dataset): string {
+export function datasetToSql(schema: RelSchema, data: Dataset, dialect: SqlDialect = "postgres"): string {
+  const q = (s: string) => quoteIdent(s, dialect);
   const out: string[] = [];
   const names = Object.keys(data); // bereits in topologischer Reihenfolge
   for (const tn of names) {
     const t = schema.tables.find((x) => x.name === tn);
     const rows = data[tn];
     if (!t || !rows.length) continue;
-    const cols = t.columns.map((c) => sqlIdent(c.name));
+    const cols = t.columns.map((c) => q(c.name));
     out.push(`-- ${tn}`);
-    out.push(`INSERT INTO ${sqlIdent(tn)} (${cols.join(", ")}) VALUES`);
-    out.push(rows.map((r) => `  (${t.columns.map((c) => sqlLiteral(r[c.name] ?? null)).join(", ")})`).join(",\n") + ";");
+    out.push(`INSERT INTO ${q(tn)} (${cols.join(", ")}) VALUES`);
+    out.push(rows.map((r) => `  (${t.columns.map((c) => sqlLiteral(r[c.name] ?? null, dialect)).join(", ")})`).join(",\n") + ";");
     out.push("");
   }
   return out.join("\n");
