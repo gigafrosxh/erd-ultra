@@ -36,8 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -54,10 +54,10 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
       prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - id: v
@@ -72,7 +72,7 @@ jobs:
     outputs:
       release_id: ${{ steps.r.outputs.id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - id: r
@@ -82,14 +82,14 @@ jobs:
           PRE: ${{ needs.version.outputs.prerelease }}
         run: |
           set -e
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG existiert bereits"
-          else
-            FLAGS="--draft --generate-notes --target $GITHUB_SHA"
-            if [ "$PRE" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
-            gh release create "$TAG" $FLAGS --title "ERD-Ultra $TAG"
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n1)
+          if [ -z "$ID" ]; then
+            ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" -X POST \
+              -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" -f name="ERD-Ultra $TAG" \
+              -F draft=true -F prerelease="$PRE" -F generate_release_notes=true --jq .id)
           fi
-          ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -n1)
+          echo "Release-ID: $ID"
+          test -n "$ID"
           echo "id=$ID" >> "$GITHUB_OUTPUT"
 
   build:
@@ -110,7 +110,7 @@ jobs:
             args: --bundles msi,nsis
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Linux-Abhängigkeiten
         if: runner.os == 'Linux'
@@ -118,7 +118,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
