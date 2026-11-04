@@ -1130,6 +1130,64 @@ textarea {
 .toast.error {
   background: var(--danger);
   color: #fff;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.toast .msg {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.toast-actions {
+  display: flex;
+  gap: 2px;
+  margin: -4px -8px -4px auto;
+  flex-shrink: 0;
+}
+.toast-actions button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+}
+.toast-actions button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.update-error {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--danger);
+  font-size: 13px;
+  color: var(--text);
+}
+.update-error b {
+  color: var(--danger);
+}
+.update-error pre {
+  margin: 0;
+  max-width: 640px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.update-error .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 @keyframes pop {
   from {

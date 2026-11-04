@@ -61,6 +61,66 @@ fn open_release_page(url: String) -> Result<(), String> {
     cmd.arg(&url).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Prüft vor einem In-App-Update, ob die laufende App überhaupt ersetzt werden kann.
+/// Gibt eine verständliche Beschreibung des Problems zurück, sonst None.
+#[tauri::command]
+fn update_install_problem() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    #[cfg(target_os = "macos")]
+    {
+        // .../ERD-Ultra.app/Contents/MacOS/erd-ultra -> .../ERD-Ultra.app
+        let app = exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app"))?;
+        let shown = app.display().to_string();
+        if shown.contains("/AppTranslocation/") {
+            return Some(
+                "macOS startet ERD-Ultra aus einem schreibgeschützten Zwischenordner (App Translocation), \
+                 weil die App noch als heruntergeladen markiert ist. So behebst du das einmalig: \
+                 ERD-Ultra beenden, im Finder in den Ordner „Programme“ ziehen, im Terminal \
+                 „xattr -dr com.apple.quarantine /Applications/ERD-Ultra.app“ ausführen und die App neu starten."
+                    .into(),
+            );
+        }
+        if let Some(dir) = app.parent() {
+            if let Some(msg) = not_writable(dir, &shown) {
+                return Some(msg);
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // AppImage: die Datei selbst wird ersetzt
+        if let Some(appimage) = std::env::var_os("APPIMAGE") {
+            let path = std::path::PathBuf::from(appimage);
+            if let Some(dir) = path.parent() {
+                if let Some(msg) = not_writable(dir, &path.display().to_string()) {
+                    return Some(msg);
+                }
+            }
+        }
+    }
+    let _ = exe;
+    None
+}
+
+/// Schreibtest im Ordner der App. Fehlende Rechte sind kein Problem (dann fragt
+/// das System nach dem Passwort), ein schreibgeschütztes Laufwerk schon.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn not_writable(dir: &std::path::Path, shown: &str) -> Option<String> {
+    let probe = dir.join(format!(".erd-ultra-update-probe-{}", std::process::id()));
+    match fs::File::create(&probe) {
+        Ok(_) => {
+            let _ = fs::remove_file(&probe);
+            None
+        }
+        Err(e) if e.raw_os_error() == Some(30) => Some(format!(
+            "ERD-Ultra läuft von einem schreibgeschützten Ort ({shown}), zum Beispiel direkt aus dem \
+             geöffneten Installations-Image. Zieh die App zuerst in den Ordner „Programme“ \
+             und starte sie von dort, dann klappt das Update."
+        )),
+        Err(_) => None,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -81,7 +141,8 @@ pub fn run() {
             write_binary_file,
             startup_file,
             take_opened_file,
-            open_release_page
+            open_release_page,
+            update_install_problem
         ])
         .build(tauri::generate_context!())
         .expect("Fehler beim Starten von ERD-Ultra")

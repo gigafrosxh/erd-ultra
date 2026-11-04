@@ -13,6 +13,7 @@ import {
   hasFileSystem,
   ide,
   installUpdate,
+  explainUpdateError,
   isTauri,
   onCloseRequested,
   onFileOpened,
@@ -127,6 +128,8 @@ export default function App() {
   const [available, setAvailable] = useState<UpdateInfo | null>(null);
   /** Fortschritt des laufenden Updates: null = unbekannt, undefined = kein Update läuft */
   const [updating, setUpdating] = useState<number | null | undefined>(undefined);
+  /** Fehlermeldung des letzten Update-Versuchs – bleibt stehen, bis sie geschlossen wird */
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const erCanvas = useRef<ErCanvasHandle | null>(null);
   const relFit = useRef<() => void>(() => {});
   // IDE-Editor: zuletzt mit dem IDE-Dokument abgeglichener Inhalt und dessen Änderungsstatus
@@ -137,8 +140,15 @@ export default function App() {
   const toast = useCallback((msg: string, kind: "error" | "info" = "info") => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, msg, kind }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === "error" ? 5000 : 2600);
+    // Fehler bleiben stehen, bis sie geschlossen werden, damit man sie lesen und kopieren kann
+    if (kind === "info") setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2600);
   }, []);
+  const closeToast = (id: number) => setToasts((t) => t.filter((x) => x.id !== id));
+  const copyText = (text: string) =>
+    navigator.clipboard.writeText(text).then(
+      () => toast("In die Zwischenablage kopiert", "info"),
+      () => toast("Kopieren nicht möglich – Text bitte markieren und mit ⌘C / Strg+C kopieren", "info"),
+    );
 
   // Beim Start nach einer neuen Version suchen (nur Desktop-App und IDE-Plugin; im IDE-Editor
   // nicht in jedem geöffneten .erdu-Tab, sondern einmal pro IDE-Sitzung im Tool-Fenster bzw. ersten Editor)
@@ -590,11 +600,14 @@ export default function App() {
               if (isTauri) {
                 if (dirty && !(await confirmDialog(`${DISCARD_MSG}\n\nERD-Ultra wird für das Update neu gestartet.`, "Aktualisieren"))) return;
                 setUpdating(null);
+                setUpdateError(null);
                 try {
                   // Nach erfolgreicher Installation startet die App neu
                   if (await installUpdate(setUpdating)) return;
                 } catch (e) {
-                  toast(`Update konnte nicht installiert werden: ${e instanceof Error ? e.message : e}. Die Release-Seite wird geöffnet.`, "error");
+                  setUpdating(undefined);
+                  setUpdateError(explainUpdateError(e instanceof Error ? e.message : String(e)));
+                  return;
                 }
                 setUpdating(undefined);
               }
@@ -621,12 +634,39 @@ export default function App() {
           >
             Überspringen
           </button>
+          {updateError && (
+            <div className="update-error" role="alert">
+              <b>Update konnte nicht installiert werden</b>
+              <pre>{updateError}</pre>
+              <div className="row">
+                <button className="btn" onClick={() => copyText(`ERD-Ultra ${APP_VERSION} → ${available.version}\n${updateError}`)}>
+                  <Icon name="copy" size={14} /> Kopieren
+                </button>
+                <button className="btn" onClick={() => openReleasePage(available.url).catch((e) => toast(String(e), "error"))}>
+                  Release-Seite öffnen
+                </button>
+                <button className="btn ghost" onClick={() => setUpdateError(null)}>
+                  Schließen
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       <div className="toasts">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.kind}`}>
-            {t.msg}
+          <div key={t.id} className={`toast ${t.kind}`} role={t.kind === "error" ? "alert" : "status"}>
+            <span className="msg">{t.msg}</span>
+            {t.kind === "error" && (
+              <span className="toast-actions">
+                <button title="Kopieren" onClick={() => copyText(t.msg)}>
+                  <Icon name="copy" size={14} />
+                </button>
+                <button title="Schließen" onClick={() => closeToast(t.id)}>
+                  <Icon name="x" size={14} />
+                </button>
+              </span>
+            )}
           </div>
         ))}
       </div>

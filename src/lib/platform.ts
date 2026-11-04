@@ -181,6 +181,9 @@ export async function setWindowTitle(title: string) {
  */
 export async function installUpdate(onProgress: (fraction: number | null) => void): Promise<boolean> {
   if (!isTauri) return false;
+  // Erst prüfen, ob die App an ihrem Ort ersetzt werden kann – sonst scheitert es erst nach dem Download
+  const problem = await invoke<string | null>("update_install_problem").catch(() => null);
+  if (problem) throw new Error(problem);
   const { check } = await import("@tauri-apps/plugin-updater");
   const update = await check();
   if (!update) return false;
@@ -196,6 +199,19 @@ export async function installUpdate(onProgress: (fraction: number | null) => voi
   const { relaunch } = await import("@tauri-apps/plugin-process");
   await relaunch();
   return true;
+}
+
+/** Technische Updater-Fehlermeldung um einen verständlichen Hinweis ergänzen */
+export function explainUpdateError(raw: string): string {
+  const hints: [RegExp, string][] = [
+    [/read-only file system|os error 30/i, "Die App liegt an einem schreibgeschützten Ort (z. B. im geöffneten DMG). Zieh sie in den Ordner „Programme“ und starte sie von dort."],
+    [/not on the same mount point/i, "Die App liegt auf einem anderen Laufwerk als der temporäre Ordner. Zieh sie in den Ordner „Programme“ und starte sie von dort."],
+    [/authentication failed|cancel|move the new app into place/i, "Für den Ordner der App sind Administratorrechte nötig, die Passwortabfrage wurde abgebrochen oder ist fehlgeschlagen."],
+    [/signature|minisign/i, "Das Update-Paket ist nicht korrekt signiert. Bitte die neue Version von der Release-Seite installieren."],
+    [/permission denied|operation not permitted|os error 1\b|os error 13/i, "Keine Schreibrechte für den Ordner der App. Zieh sie in den Ordner „Programme“ oder installiere die neue Version von der Release-Seite."],
+  ];
+  const hint = hints.find(([re]) => re.test(raw))?.[1];
+  return hint ? `${hint}\n\nTechnische Meldung: ${raw}` : raw;
 }
 
 /** Release-Seite im System-Browser öffnen */
