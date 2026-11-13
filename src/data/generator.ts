@@ -1,6 +1,6 @@
 // Testdaten-Generator für relationale Schemas.
 
-import { type RelColumn, type RelSchema, type RelTable } from "../rel/model";
+import { PHONE_NAME, ZIP_NAME, type RelColumn, type RelSchema, type RelTable } from "../rel/model";
 import { type SqlDialect, quoteIdent } from "../rel/sql";
 
 export type Value = string | number | boolean | null;
@@ -205,7 +205,8 @@ export function generateData(schema: RelSchema, opts: GenOptions = defaultGenOpt
     if (/vorname|first/.test(name)) s = pick(VORNAMEN);
     else if (/nachname|last|familienname/.test(name)) s = pick(NACHNAMEN);
     else if (/email|mail/.test(name)) s = `${pick(VORNAMEN).toLowerCase()}.${pick(NACHNAMEN).toLowerCase().replace(/ü/g, "ue").replace(/ö/g, "oe").replace(/ä/g, "ae")}${int(1, 99)}@example.com`;
-    else if (/tel|phone|handy/.test(name)) s = `+49 ${int(150, 179)} ${int(1000000, 9999999)}`;
+    else if (ZIP_NAME.test(name)) s = String(int(1067, 99998)).padStart(5, "0");
+    else if (PHONE_NAME.test(name)) s = `+49 ${int(150, 179)} ${int(1000000, 9999999)}`;
     else if (/strasse|straße|street/.test(name)) s = `${pick(STRASSEN)} ${int(1, 120)}`;
     else if (/ort|stadt|city|wohnort/.test(name)) s = pick(STAEDTE);
     else if (/land|country/.test(name)) s = pick(["Deutschland", "Österreich", "Schweiz"]);

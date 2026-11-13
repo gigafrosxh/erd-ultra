@@ -96,7 +96,8 @@ export function schemaToSql(schema: RelSchema, dialect: SqlDialect = "postgres")
       if (dialect === "sqlite") lines.push(`  ${fk}`);
       else fks.push(`ALTER TABLE ${q(t.name)} ADD ${fk};`);
     }
-    const comment = t.note ? `-- ${t.note}\n` : "";
+    // Jede Zeile der Notiz einzeln auskommentieren, sonst landet ab der zweiten Zeile Text als SQL in der DDL
+    const comment = t.note ? `${t.note.split(/\r\n|\r|\n/).map((l) => `-- ${l}`.trimEnd()).join("\n")}\n` : "";
     out.push(`${comment}CREATE TABLE ${q(t.name)} (\n${lines.join(",\n")}\n);`);
   }
   if (fks.length) out.push("", ...fks);

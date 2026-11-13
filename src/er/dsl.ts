@@ -15,7 +15,7 @@
 //   isa Tier disjoint total { Saeugetier, Vogel, Reptil }
 //   note "Freitext"
 
-import { DslError, TokenStream, quoteName } from "../lib/lexer";
+import { DslError, TokenStream, quoteName, quoteString } from "../lib/lexer";
 import { autoPlaceNewNodes } from "./layout";
 import {
   type AttrKind,
@@ -29,7 +29,8 @@ import {
   uid,
 } from "./model";
 
-const RESERVED = new Set([
+/** Schlüsselwörter, mit denen eine Anweisung beginnt (Wiederaufsetzpunkte nach Fehlern) */
+const STATEMENT_KW = new Set([
   "entity",
   "weak",
   "associative",
@@ -38,19 +39,17 @@ const RESERVED = new Set([
   "rel",
   "identifying",
   "isa",
+  "specialization",
+  "generalization",
   "attribute",
   "note",
-  "key",
-  "pk",
-  "partial",
-  "multi",
-  "multivalued",
-  "derived",
-  "as",
-  "total",
-  "disjoint",
-  "overlapping",
 ]);
+
+/** Modifikatoren einer isa-Anweisung */
+const ISA_MODS = ["d", "o", "disjoint", "disjunkt", "overlapping", "überlappend", "ueberlappend", "total", "partial", "partiell"];
+
+/** Namen, die beim Schreiben in Anführungszeichen gesetzt werden */
+const RESERVED = new Set([...STATEMENT_KW, ...ISA_MODS, "key", "pk", "multi", "multivalued", "derived", "as"]);
 
 const ATTR_MODS: Record<string, AttrKind> = {
   key: "key",
@@ -95,6 +94,7 @@ export function parseErDsl(src: string, previous?: ErDiagram): ParseResult {
   };
 
   const ts = new TokenStream(src);
+  const errors: DslError[] = [...ts.lexErrors];
 
   const parseType = (): string => {
     const t = ts.name("Datentyp", false);
@@ -118,7 +118,26 @@ export function parseErDsl(src: string, previous?: ErDiagram): ParseResult {
     while (!ts.is("}")) {
       if (ts.peek().type === "eof") throw new DslError('"}" erwartet', ts.peek());
       if (ts.accept(",") || ts.accept(";")) continue;
-      parseAttr(ownerId, ownerKey);
+      ts.skipNl();
+      const attrStart = ts.i;
+      try {
+        parseAttr(ownerId, ownerKey);
+      } catch (e) {
+        // Am Dateiende meldet der äußere Block den fehlenden Abschluss
+        if (!(e instanceof DslError) || ts.peek().type === "eof") throw e;
+        errors.push(e);
+        // Nur dieses Attribut überspringen: bis Zeilenende, "," oder "}" auf derselben Blockebene
+        ts.i = attrStart;
+        let depth = 0;
+        for (;;) {
+          const t = ts.toks[ts.i];
+          if (t.type === "eof") break;
+          if (depth === 0 && (t.type === "nl" || t.value === "," || t.value === ";" || t.value === "}") && ts.i > attrStart) break;
+          if (t.value === "{") depth++;
+          if (t.value === "}") depth--;
+          ts.i++;
+        }
+      }
     }
     ts.expect("}");
   };
@@ -204,10 +223,7 @@ export function parseErDsl(src: string, previous?: ErDiagram): ParseResult {
   const parseIsa = () => {
     let sup: ErEntity | undefined;
     const first = ts.peek();
-    const isMod = (v: string) =>
-      ["d", "o", "disjoint", "disjunkt", "overlapping", "überlappend", "ueberlappend", "total", "partial", "partiell"].includes(
-        v.toLowerCase(),
-      );
+    const isMod = (v: string) => ISA_MODS.includes(v.toLowerCase());
     if ((first.type === "ident" || first.type === "string") && !(first.type === "ident" && isMod(first.value))) {
       sup = entity(ts.next().value);
     }
@@ -247,7 +263,6 @@ export function parseErDsl(src: string, previous?: ErDiagram): ParseResult {
     for (const s of subs) edges.push({ id: uid("e"), kind: "sub", from: isa.id, to: entity(s).id });
   };
 
-  const errors: DslError[] = [];
   while (ts.peek().type !== "eof") {
     const start = ts.i;
     try {
@@ -290,15 +305,20 @@ export function parseErDsl(src: string, previous?: ErDiagram): ParseResult {
     } catch (e) {
       if (!(e instanceof DslError)) throw e;
       errors.push(e);
-      // bis zur nächsten Zeile mit Schlüsselwort am Anfang überspringen
+      // bis zur nächsten Zeile mit Schlüsselwort am Anfang überspringen. Die Klammertiefe zählt ab dem Beginn
+      // der Anweisung, damit ein Fehler mitten in einem Block nicht innerhalb des Blocks wieder aufsetzt.
       if (ts.i === start) ts.i++;
       let depth = 0;
+      for (let j = start; j < ts.i; j++) {
+        if (ts.toks[j].value === "{") depth++;
+        if (ts.toks[j].value === "}") depth = Math.max(0, depth - 1);
+      }
       while (ts.toks[ts.i].type !== "eof") {
         const t = ts.toks[ts.i];
+        const prev = ts.toks[ts.i - 1];
+        if (depth === 0 && prev?.type === "nl" && t.type === "ident" && STATEMENT_KW.has(t.value.toLowerCase())) break;
         if (t.value === "{") depth++;
         if (t.value === "}") depth = Math.max(0, depth - 1);
-        const prev = ts.toks[ts.i - 1];
-        if (depth === 0 && prev?.type === "nl" && t.type === "ident" && RESERVED.has(t.value.toLowerCase())) break;
         ts.i++;
       }
     }
@@ -463,7 +483,8 @@ export function serializeErDsl(d: ErDiagram): string {
       .filter((e) => e.kind === "role" && e.from === ownerId && byId.has(e.to))
       .map((e) => {
         let s = q(byId.get(e.to)!.name);
-        if (e.card) s += ` ${e.card}`;
+        // Kardinalitäten wie "0,n" in Klammern, sonst liest der Parser am Komma einen neuen Teilnehmer
+        if (e.card) s += ` ${/[,\s]/.test(e.card) && !/^\(.*\)$/.test(e.card) ? `(${e.card.replace(/\s+/g, "")})` : e.card}`;
         if (e.role) s += ` as ${q(e.role)}`;
         if (e.total) s += " total";
         return s;
@@ -488,13 +509,13 @@ export function serializeErDsl(d: ErDiagram): string {
     const supEdge = d.edges.find((e) => e.kind === "super" && e.to === i.id && byId.has(e.from));
     const subs = d.edges.filter((e) => e.kind === "sub" && e.from === i.id && byId.has(e.to)).map((e) => q(byId.get(e.to)!.name));
     const sup = supEdge ? `${q(byId.get(supEdge.from)!.name)} ` : "";
-    const label = i.name && i.name !== (i.disjoint ? "d" : "o") ? ` "${i.name}"` : "";
+    const label = i.name && i.name !== (i.disjoint ? "d" : "o") ? ` ${quoteString(i.name)}` : "";
     parts.push(`isa ${sup}${i.disjoint ? "disjoint" : "overlapping"} ${i.total ? "total" : "partial"}${label} { ${subs.join(", ")} }`);
   }
   const loose = d.nodes.filter((n): n is ErAttribute => n.kind === "attribute" && !owned.has(n.id));
   if (loose.length) parts.push("");
   for (const a of loose) {
-    parts.push(withBlock(`attribute ${MOD[a.attrKind]}${q(a.name)}`, a.id));
+    parts.push(withBlock(`attribute ${MOD[a.attrKind]}${q(a.name)}${a.dataType ? `: ${a.dataType}` : ""}`, a.id));
   }
   const notes = d.nodes.filter((n) => n.kind === "note");
   if (notes.length) parts.push("");
@@ -507,6 +528,7 @@ export function newNodeId(): string {
 }
 
 const COMMENT_LINE = /^\s*(#|\/\/)/;
+const BLOCK_COMMENT_START = /^\s*\/\*/;
 
 /** Schlüssel einer Code-Zeile zum Wiederfinden nach dem Neu-Erzeugen, z. B. "entity Kunde" oder "key kunden_nr" */
 function lineKey(line: string): string {
@@ -527,8 +549,17 @@ export function keepComments(oldText: string, newText: string): string {
   const old = oldText.split("\n");
   const blocks: { key: string | null; lines: string[] }[] = [];
   let cur: string[] = [];
+  // Block-Kommentar /* … */ über mehrere Zeilen: Einrückung relativ zur ersten Zeile behalten
+  let blockIndent: string | null = null;
   for (const line of old) {
-    if (COMMENT_LINE.test(line)) cur.push(line.trim());
+    if (blockIndent !== null || BLOCK_COMMENT_START.test(line)) {
+      const startsHere = blockIndent === null;
+      if (startsHere) blockIndent = line.match(/^\s*/)![0];
+      const ind = blockIndent!;
+      cur.push((line.startsWith(ind) ? line.slice(ind.length) : line.trimStart()).trimEnd());
+      const rest = startsHere ? line.slice(line.indexOf("/*") + 2) : line;
+      if (rest.includes("*/")) blockIndent = null;
+    } else if (COMMENT_LINE.test(line)) cur.push(line.trim());
     else if (line.trim() && cur.length) {
       blocks.push({ key: lineKey(line), lines: cur });
       cur = [];
