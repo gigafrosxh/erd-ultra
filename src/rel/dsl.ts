@@ -24,7 +24,7 @@ const RESERVED = new Set(["table", "pk", "primary", "not", "null", "unique", "re
 export function parseRelDsl(src: string, previous?: RelSchema): RelParseResult {
   const ts = new TokenStream(src);
   const tables: RelTable[] = [];
-  const errors: DslError[] = [];
+  const errors: DslError[] = [...ts.lexErrors];
 
   const parseRef = (col: RelColumn) => {
     const t = ts.name("Tabellenname", false);

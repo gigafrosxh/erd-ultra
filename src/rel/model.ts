@@ -47,10 +47,18 @@ export function tableWidth(t: RelTable): number {
   return Math.max(TABLE_W, Math.ceil(longest / 10) * 10);
 }
 
+/** Spaltennamen für Telefon-, Handy- und Faxnummern (nicht "titel", "hotel" …) */
+export const PHONE_NAME = /(telefon|^tel($|_|nr|efon)|_tel($|_|nr)|phone|handy|^mobil|_mobil|fax)/;
+/** Spaltennamen für Postleitzahlen */
+export const ZIP_NAME = /(^plz|_plz|plz$|postleitzahl|^zip|_zip|zipcode|postal)/;
+
 /** Datentyp anhand des Spaltennamens erraten */
 export function guessType(name: string): string {
   const n = name.toLowerCase();
-  if (/(^id$|_id$|^id_|nr$|_nr|nummer|^anzahl|menge|alter$|jahr$|tage$|_cm$|_kg$|_c$|^count|^qty|stock|plz$)/.test(n)) {
+  // Telefonnummern und Postleitzahlen sind Text (Vorwahl "+49", führende Nullen wie 01067)
+  if (PHONE_NAME.test(n)) return "varchar(30)";
+  if (ZIP_NAME.test(n)) return "varchar(10)";
+  if (/(^id$|_id$|^id_|nr$|_nr|nummer|^anzahl|menge|alter$|jahr$|tage$|_cm$|_kg$|_c$|^count|^qty|stock)/.test(n)) {
     if (n.endsWith("_c")) return "decimal(5,1)";
     return "int";
   }

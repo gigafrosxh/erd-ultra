@@ -28,7 +28,13 @@ export class DslError extends Error {
 const identStart = /[\p{L}_]/u;
 const identPart = /[\p{L}\p{N}_]/u;
 
-export function tokenize(src: string): Token[] {
+const ESCAPES: Record<string, string> = { n: "\n", t: "\t", r: "\r", b: "\b", f: "\f" };
+
+/**
+ * Zerlegt den Text in Tokens. Lexikalische Fehler (nicht geschlossene Zeichenkette oder Kommentar) werden in
+ * `errors` gesammelt statt geworfen, damit der Editor sie anzeigen kann.
+ */
+export function tokenize(src: string, errors: DslError[] = []): Token[] {
   const toks: Token[] = [];
   let i = 0;
   let line = 1;
@@ -55,6 +61,9 @@ export function tokenize(src: string): Token[] {
       continue;
     }
     if (c === "/" && src[i + 1] === "*") {
+      const start = i;
+      const startLine = line;
+      const startCol = start - lineStart + 1;
       i += 2;
       while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) {
         if (src[i] === "\n") {
@@ -62,6 +71,10 @@ export function tokenize(src: string): Token[] {
           lineStart = i + 1;
         }
         i++;
+      }
+      if (i >= src.length) {
+        errors.push(new DslError("Nicht geschlossener Kommentar: \"*/\" fehlt", { line: startLine, col: startCol, pos: start, end: start + 2 }));
+        break;
       }
       i += 2;
       continue;
@@ -73,16 +86,20 @@ export function tokenize(src: string): Token[] {
       while (i < src.length && src[i] !== c && src[i] !== "\n") {
         if (src[i] === "\\" && i + 1 < src.length) {
           const n = src[i + 1];
-          s += n === "n" ? "\n" : n;
+          if (n === "u" && /^[0-9a-fA-F]{4}$/.test(src.slice(i + 2, i + 6))) {
+            s += String.fromCharCode(parseInt(src.slice(i + 2, i + 6), 16));
+            i += 6;
+            continue;
+          }
+          s += ESCAPES[n] ?? n;
           i += 2;
           continue;
         }
         s += src[i++];
       }
       if (src[i] !== c) {
-        throw new DslError("Nicht geschlossene Zeichenkette", { line, col: start - lineStart + 1, pos: start, end: i });
-      }
-      i++;
+        errors.push(new DslError("Nicht geschlossene Zeichenkette", { line, col: start - lineStart + 1, pos: start, end: i }));
+      } else i++;
       push("string", s, start);
       continue;
     }
@@ -119,8 +136,10 @@ export function tokenize(src: string): Token[] {
 export class TokenStream {
   toks: Token[];
   i = 0;
+  /** Lexikalische Fehler aus dem Tokenizer */
+  lexErrors: DslError[] = [];
   constructor(src: string) {
-    this.toks = tokenize(src);
+    this.toks = tokenize(src, this.lexErrors);
   }
   peek(skipNl = true): Token {
     let j = this.i;
@@ -177,5 +196,10 @@ const simpleIdent = /^[\p{L}_][\p{L}\p{N}_]*$/u;
 
 export function quoteName(name: string, reserved: Set<string> = new Set()): string {
   if (simpleIdent.test(name) && !reserved.has(name.toLowerCase())) return name;
-  return `"${name.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
+  return quoteString(name);
+}
+
+/** Zeichenkette immer in Anführungszeichen, mit Escapes, die `tokenize` wieder einliest. */
+export function quoteString(s: string): string {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")}"`;
 }
